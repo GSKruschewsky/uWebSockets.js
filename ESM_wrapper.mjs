@@ -6,6 +6,10 @@ export default uws;
 export const App = uws.App;
 export const SSLApp = uws.SSLApp;
 
+// CliApp
+export const CliApp = uws.CliApp;
+export const CliSSLApp = uws.CliSSLApp;
+
 // Listen options
 export const LIBUS_LISTEN_EXCLUSIVE_PORT = uws.LIBUS_LISTEN_EXCLUSIVE_PORT;
 
