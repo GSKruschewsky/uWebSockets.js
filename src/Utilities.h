@@ -61,6 +61,8 @@ struct PerContextData {
     /* We hold all apps until free */
     std::vector<std::unique_ptr<uWS::App>> apps;
     std::vector<std::unique_ptr<uWS::SSLApp>> sslApps;
+    std::vector<std::unique_ptr<uWS::CliApp>> cliApps;
+    std::vector<std::unique_ptr<uWS::CliSSLApp>> cliSSLApps;
 };
 
 template <class APP>
@@ -70,9 +72,9 @@ static constexpr int getAppTypeIndex() {
 
     /* Returns 2 for H3App */
 
-    if constexpr (std::is_same<APP, uWS::App>::value) {
+    if constexpr (std::is_same<APP, uWS::App>::value || std::is_same<APP, uWS::CliApp>::value) {
         return 0;
-    } else if constexpr (std::is_same<APP, uWS::SSLApp>::value) {
+    } else if constexpr (std::is_same<APP, uWS::SSLApp>::value || std::is_same<APP, uWS::CliSSLApp>::value) {
         return 1;
     } else if constexpr (std::is_same<APP, uWS::H3App>::value) {
         return 2;
