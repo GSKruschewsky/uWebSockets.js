@@ -17,6 +17,7 @@
 
 /* We are only allowed to depend on µWS and V8 in this layer. */
 #include "App.h"
+#include "ClientApp.h"
 #include "Http3App.h"
 
 #include <iostream>
@@ -31,6 +32,7 @@ using namespace v8;
 #include "HttpResponseWrapper.h"
 #include "HttpRequestWrapper.h"
 #include "AppWrapper.h"
+#include "ClientAppWrapper.h"
 
 #include <numeric>
 #include <functional>
@@ -392,6 +394,8 @@ PerContextData *Main(Local<Object> exports) {
     /* uWS namespace */
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "App", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_App<uWS::App>, externalPerContextData)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "SSLApp", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_App<uWS::SSLApp>, externalPerContextData)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
+    exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "CliApp", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_ClientApp<uWS::CliApp>, externalPerContextData)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
+    exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "CliSSLApp", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_ClientApp<uWS::CliSSLApp>, externalPerContextData)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
 
     /* H3 experimental */
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "H3App", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_App<uWS::H3App>, externalPerContextData)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
@@ -469,6 +473,8 @@ NODE_MODULE_INITIALIZER(Local<Object> exports, Local<Value> module, Local<Contex
         /* Freeing apps here, it could be done earlier but not sooner */
         perContextData->apps.clear();
         perContextData->sslApps.clear();
+        perContextData->cliApps.clear();
+        perContextData->cliSSLApps.clear();
         /* Freeing the loop here means we give time for our timers to close, etc */
         uWS::Loop::get()->free();
 
