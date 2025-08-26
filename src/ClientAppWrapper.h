@@ -92,6 +92,25 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
             behavior.onlyLastPacketFrame = maybeOnlyLastPacketFrame.ToLocalChecked()->BooleanValue(isolate);
         }
 
+        /* customHeaders or default */
+        MaybeLocal<Value> maybeCustomHeaders = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "customHeaders", NewStringType::kNormal).ToLocalChecked());
+        if (!maybeCustomHeaders.IsEmpty() && !maybeCustomHeaders.ToLocalChecked()->IsUndefined() && maybeCustomHeaders.ToLocalChecked()->IsObject()) {
+            Local<Object> customHeadersObject = Local<Object>::Cast(maybeCustomHeaders.ToLocalChecked());
+            Local<Array> propertyNames = customHeadersObject->GetPropertyNames(isolate->GetCurrentContext()).ToLocalChecked();
+            
+            for (uint32_t i = 0; i < propertyNames->Length(); i++) {
+                Local<Value> key = propertyNames->Get(isolate->GetCurrentContext(), i).ToLocalChecked();
+                Local<Value> value = customHeadersObject->Get(isolate->GetCurrentContext(), key).ToLocalChecked();
+                
+                NativeString keyString(isolate, key);
+                NativeString valueString(isolate, value);
+                
+                if (!keyString.isInvalid(args) && !valueString.isInvalid(args)) {
+                    behavior.customHeaders[std::string(keyString.getString())] = std::string(valueString.getString());
+                }
+            }
+        }
+
         /* Get all the handlers */
         openPf.Reset(args.GetIsolate(), Local<Function>::Cast(behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "open", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked()));
         messagePf.Reset(args.GetIsolate(), Local<Function>::Cast(behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "message", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked()));
