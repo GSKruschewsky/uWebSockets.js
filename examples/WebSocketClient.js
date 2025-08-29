@@ -1,7 +1,6 @@
 /* A simple WebSocket client example */
 
 const uWS = require('../dist/uws.js');
-const port = 9001;
 
 const app = uWS.CliSSLApp();
 

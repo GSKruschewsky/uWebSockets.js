@@ -56,7 +56,7 @@ struct PerContextData {
     Isolate *isolate;
     UniquePersistent<Object> reqTemplate[2]; // 0 = non-SSL/SSL, 1 = Http3
     UniquePersistent<Object> resTemplate[4]; // 0 = non-SSL, 1 = SSL, 2 = Http3
-    UniquePersistent<Object> wsTemplate[2];
+    UniquePersistent<Object> wsTemplate[4];  // 0 = non-SSL (server), 1 = SSL (server), 2 = non-SSL (client), 3 = SSL (client)
 
     /* We hold all apps until free */
     std::vector<std::unique_ptr<uWS::App>> apps;
@@ -72,10 +72,14 @@ static constexpr int getAppTypeIndex() {
 
     /* Returns 2 for H3App */
 
-    if constexpr (std::is_same<APP, uWS::App>::value || std::is_same<APP, uWS::CliApp>::value) {
+    if constexpr (std::is_same<APP, uWS::App>::value) {
         return 0;
-    } else if constexpr (std::is_same<APP, uWS::SSLApp>::value || std::is_same<APP, uWS::CliSSLApp>::value) {
+    } else if constexpr (std::is_same<APP, uWS::SSLApp>::value) {
         return 1;
+    } else if constexpr (std::is_same<APP, uWS::CliApp>::value) {
+        return 2; 
+    } else if constexpr (std::is_same<APP, uWS::CliSSLApp>::value) {
+        return 3; 
     } else if constexpr (std::is_same<APP, uWS::H3App>::value) {
         return 2;
     } else {
