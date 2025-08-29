@@ -19,7 +19,7 @@ module.exports = (() => {
 	try {
 		return require('./uws_' + process.platform + '_' + process.arch + '_' + process.versions.modules + '.node');
 	} catch (e) {
-		throw new Error('This version of uWS.js (v1.0.1) supports only Node.js versions 20, 22, 23 and 24 on (glibc) Linux, on Tier 1 platforms (https://github.com/nodejs/node/blob/master/BUILDING.md#platform-list).\n\n' + e.toString());
+		throw new Error('This version of uWS.js (v1.0.3) supports only Node.js versions 20, 22, 23 and 24 on (glibc) Linux, on Tier 1 platforms (https://github.com/nodejs/node/blob/master/BUILDING.md#platform-list).\n\n' + e.toString());
 	}
 })();
 
