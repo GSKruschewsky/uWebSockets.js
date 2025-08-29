@@ -385,8 +385,10 @@ PerContextData *Main(Local<Object> exports) {
     perContextData->resTemplate[1].Reset(isolate, HttpResponseWrapper::init<1>(isolate));
     perContextData->resTemplate[2].Reset(isolate, HttpResponseWrapper::init<2>(isolate));
     perContextData->resTemplate[3].Reset(isolate, HttpResponseWrapper::init<3>(isolate));
-    perContextData->wsTemplate[0].Reset(isolate, WebSocketWrapper::init<0>(isolate));
-    perContextData->wsTemplate[1].Reset(isolate, WebSocketWrapper::init<1>(isolate));
+    perContextData->wsTemplate[0].Reset(isolate, WebSocketWrapper::init<0, 1>(isolate));
+    perContextData->wsTemplate[1].Reset(isolate, WebSocketWrapper::init<1, 1>(isolate));
+    perContextData->wsTemplate[2].Reset(isolate, WebSocketWrapper::init<0, 0>(isolate));
+    perContextData->wsTemplate[3].Reset(isolate, WebSocketWrapper::init<1, 0>(isolate));
 
     /* Refer to per context data via External */
     Local<External> externalPerContextData = External::New(isolate, perContextData);
