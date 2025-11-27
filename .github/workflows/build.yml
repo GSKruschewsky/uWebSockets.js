@@ -24,7 +24,15 @@ jobs:
           ldd --version | head -n1 || true
 
           apt-get update
-          apt-get install -y git build-essential make ca-certificates curl
+          apt-get install -y wget gnupg ca-certificates software-properties-common
+
+          # LLVM repo for clang-18 on Ubuntu 20.04 (focal)
+          echo "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-18 main" > /etc/apt/sources.list.d/llvm.list
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+          apt-get update
+          
+          # Toolchain + Node for smoke test
+          apt-get install -y git build-essential make curl clang-18 lld-18 llvm-18-dev libclang-18-dev
 
           # Install Node.js 25 (multi-arch, works on arm64 + amd64)
           curl -fsSL https://deb.nodesource.com/setup_25.x | bash -
