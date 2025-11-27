@@ -92,6 +92,17 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
             behavior.onlyLastPacketFrame = maybeOnlyLastPacketFrame.ToLocalChecked()->BooleanValue(isolate);
         }
 
+        /* localAddress or default */
+        MaybeLocal<Value> maybeLocalAddress = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "localAddress", NewStringType::kNormal).ToLocalChecked());
+        if (!maybeLocalAddress.IsEmpty() && !maybeLocalAddress.ToLocalChecked()->IsUndefined()) {
+            NativeString localAddressValue(isolate, maybeLocalAddress.ToLocalChecked());
+            if (!localAddressValue.isInvalid(args) && localAddressValue.getString().length() > 0) {
+                thread_local std::string localAddress;
+                localAddress = localAddressValue.getString();
+                behavior.localAddress = const_cast<char*>(localAddress.c_str());
+            }
+        }
+
         /* customHeaders or default */
         MaybeLocal<Value> maybeCustomHeaders = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "customHeaders", NewStringType::kNormal).ToLocalChecked());
         if (!maybeCustomHeaders.IsEmpty() && !maybeCustomHeaders.ToLocalChecked()->IsUndefined() && maybeCustomHeaders.ToLocalChecked()->IsObject()) {
