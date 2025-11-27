@@ -242,6 +242,14 @@ export interface WebSocketBehavior<UserData> {
     maxBackpressure?: number;
     /** Whether or not we should automatically send pings to uphold a stable connection given whatever idleTimeout. */
     sendPingsAutomatically?: boolean;
+    /** Whether or not to skip UTF-8 validation on incoming text messages. Defaults to false. */
+    skipUTF8Validation?: boolean;
+    /** (Client only) Whether or not to only parse the last websocket frame from the TCP packet. Defaults to false. */
+    onlyLastPacketFrame?: boolean;
+    /** (Client only) Optional local address to bind the socket to. */
+    localAddress?: RecognizedString;
+    /** (Client only) Optional custom headers to add to the WebSocket handshake request. */
+    customHeaders?: { [key: string]: RecognizedString };
     /** Upgrade handler used to intercept HTTP upgrade requests and potentially upgrade to WebSocket.
      * See UpgradeAsync and UpgradeSync example files.
      */
@@ -340,6 +348,22 @@ export function App(options?: AppOptions) : TemplatedApp;
 
 /** Constructs an SSL app. See App. */
 export function SSLApp(options: AppOptions) : TemplatedApp;
+
+/** TemplatedClientApp is either an SSL or non-SSL websocket client. */
+export interface TemplatedClientApp {
+    /** Registers a handler to WebSocket client events. */
+    ws<UserData>(behavior: WebSocketBehavior<UserData>) : TemplatedClientApp;
+    /** Connects to a WebSocket server at url. */
+    connect<UserData>(url: RecognizedString) : TemplatedClientApp;
+}
+
+/** Constructs a non-SSL WS client. A client is your starting point where you attach behavior to WS events.
+ * Set any SSL options (in case of CliSSLApp) and the like.
+ */
+export function CliApp(options?: AppOptions) : TemplatedClientApp;
+
+/** Constructs a SSL websocket client. */
+export function CliSSLApp(options: AppOptions) : TemplatedClientApp;
 
 /** Closes a uSockets listen socket. */
 export function us_listen_socket_close(listenSocket: us_listen_socket) : void;
