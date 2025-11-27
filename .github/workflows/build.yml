@@ -39,4 +39,4 @@ jobs:
           git config --global user.email "luhkynaat@gmail.com"
           git config --global user.name "GSKruschewsky"
           git commit -a -m "[GitHub Actions] Updated ${{ matrix.os }} binaries" || true
-          git push "https://GSKruschewsky:${{ secrets.SECRET }}@github.com/GSKruschewsky/uWebSockets.js" binaries
+          git push --force "https://GSKruschewsky:${{ secrets.SECRET }}@github.com/GSKruschewsky/uWebSockets.js" binaries
