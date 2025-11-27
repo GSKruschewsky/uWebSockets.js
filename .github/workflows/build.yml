@@ -32,7 +32,20 @@ jobs:
           apt-get update
           
           # Toolchain + Node for smoke test
-          apt-get install -y git build-essential make cmake curl clang-18 lld-18 llvm-18-dev libclang-18-dev
+          apt-get install -y git build-essential make cmake curl clang-18 lld-18 llvm-18-dev libclang-18-dev zlib1g-dev
+
+          # Newer GCC (GCC 11) for C++20 <source_location>
+          add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          apt-get update
+          apt-get install -y gcc-11 g++-11
+          
+          # Set globally so all nested build systems use the right compiler
+          export CC=gcc-11
+          export CXX=g++-11
+          
+          # Verify
+          $CC --version
+          $CXX --version
 
           # Install Node.js 25 (multi-arch, works on arm64 + amd64)
           curl -fsSL https://deb.nodesource.com/setup_25.x | bash -
