@@ -341,23 +341,6 @@ export function App(options?: AppOptions) : TemplatedApp;
 /** Constructs an SSL app. See App. */
 export function SSLApp(options: AppOptions) : TemplatedApp;
 
-/** TemplatedClientApp is either an SSL or non-SSL websocket client. */
-export interface TemplatedClientApp {
-    /** Registers a handler to WebSocket client events. */
-    ws<UserData>(behavior: WebSocketBehavior<UserData>) : TemplatedClientApp;
-
-    /** Connects to a WebSocket server at url. */
-    connect<UserData>(url: RecognizedString) : TemplatedClientApp;
-}
-
-/** Constructs a non-SSL WS client. A client is your starting point where you attach behavior to WS events.
- * Set any SSL options (in case of CliSSLApp) and the like.
- */
-export function CliApp(options?: AppOptions) : TemplatedClientApp;
-
-/** Constructs a SSL websocket client. */
-export function CliSSLApp(options: AppOptions) : TemplatedClientApp;
-
 /** Closes a uSockets listen socket. */
 export function us_listen_socket_close(listenSocket: us_listen_socket) : void;
 
