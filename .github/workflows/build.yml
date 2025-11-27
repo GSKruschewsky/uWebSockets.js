@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-20.04, ubuntu-20.04-arm]
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
       - name: Setup Windows
         if: matrix.os == 'windows-latest'
@@ -22,21 +22,28 @@ jobs:
           node-version: 25
       - name: Update binaries
         run: |
-          git clone --recursive https://github.com/GSKruschewsky/uWebSockets.js.git
-          cd uWebSockets.js
-          ${{ matrix.os == 'windows-latest' && 'nmake' || 'make' }}
-          ls dist
-          cd tests && npm install ws && node smoke.js && cd ..
-          ls dist
-          git fetch origin binaries:binaries
-          git checkout binaries
-          cp dist/*.node .
-          cp dist/*.js .
-          git rev-parse master > source_commit
-          ls
-          ${{ matrix.os != 'windows-latest' && 'git checkout master docs/index.d.ts && mv docs/index.d.ts .' || '' }}
-          git status
-          git config --global user.email "luhkynaat@gmail.com"
-          git config --global user.name "GSKruschewsky"
-          git commit -a -m "[GitHub Actions] Updated ${{ matrix.os }} binaries" || true
-          git push --force "https://GSKruschewsky:${{ secrets.SECRET }}@github.com/GSKruschewsky/uWebSockets.js" binaries
+          docker run --rm \
+            -e SECRET="$SECRET" \
+            -e GITHUB_OS="${{ matrix.os }}" \
+            ubuntu:20.04 \
+            bash -lc '
+              set -e
+
+              git clone --recursive https://github.com/GSKruschewsky/uWebSockets.js.git
+              cd uWebSockets.js
+              make
+              ls dist
+              cd tests && npm install ws && node smoke.js && cd ..
+              ls dist
+              git fetch origin binaries:binaries
+              git checkout binaries
+              cp dist/*.node .
+              cp dist/*.js .
+              git rev-parse master > source_commit
+              ls
+              ${{ matrix.os != 'windows-latest' && 'git checkout master docs/index.d.ts && mv docs/index.d.ts .' || '' }}
+              git status
+              git config --global user.email "luhkynaat@gmail.com"
+              git config --global user.name "GSKruschewsky"
+              git commit -a -m "[GitHub Actions] Updated ${{ matrix.os }} binaries" || true
+              git push --force "https://GSKruschewsky:${{ secrets.SECRET }}@github.com/GSKruschewsky/uWebSockets.js" binaries
