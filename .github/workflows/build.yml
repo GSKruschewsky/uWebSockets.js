@@ -81,7 +81,7 @@ jobs:
           git status
 
           git commit -a -m "[GitHub Actions] Updated ${GITHUB_OS} binaries" || true
-          git push --force --no-force-with-lease "https://GSKruschewsky:${SECRET}@github.com/GSKruschewsky/uWebSockets.js" HEAD:binaries
+          git push --force "https://GSKruschewsky:${SECRET}@github.com/GSKruschewsky/uWebSockets.js" binaries
           EOF
 
           chmod +x docker_build.sh
