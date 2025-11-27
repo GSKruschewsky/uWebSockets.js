@@ -37,6 +37,6 @@ jobs:
           ${{ matrix.os != 'windows-latest' && 'git checkout master docs/index.d.ts && mv docs/index.d.ts .' || '' }}
           git status
           git config --global user.email "luhkynaat@gmail.com"
-          git config --global user.name "GSKruchewsky"
+          git config --global user.name "GSKruschewsky"
           git commit -a -m "[GitHub Actions] Updated ${{ matrix.os }} binaries" || true
-          git push "https://GSKruchewsky:${{ secrets.SECRET }}@github.com/GSKruchewsky/uWebSockets.js" binaries
+          git push "https://GSKruschewsky:${{ secrets.SECRET }}@github.com/GSKruschewsky/uWebSockets.js" binaries
