@@ -270,6 +270,13 @@ export interface WebSocketBehavior<UserData> {
     pong?: (ws: WebSocket<UserData>, message: ArrayBuffer) => void;
     /** Handler for subscription changes. */
     subscription?: (ws: WebSocket<UserData>, topic: ArrayBuffer, newCount: number, oldCount: number) => void;
+    /** (Client only) Handler for rejected WebSocket handshake. Called when the server responds with a non-101 status code.
+     * @param status - HTTP status code as string (e.g., "403")
+     * @param statusText - HTTP status text (e.g., "Forbidden")
+     * @param body - Response body as string
+     * @param req - HttpRequest object containing response headers
+     */
+    rejectedHandshake?: (status: string, statusText: string, body: string, req: HttpRequest) => void | Promise<void>;
 }
 
 /** Options used when constructing an app. Especially for SSLApp.
