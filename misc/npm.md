@@ -2,18 +2,18 @@
 
 Since 2018, uWebSockets.js has been published on GitHub, secured with cryptographically verifiable SHA-1 hashes using Git SCM. Our network includes over 500 third-party clones. Each binary release comes with its own SHA-1 reference of the compiled source code, and the source code lists the compilation flags used.
 
-### Recommended Installation (substitute v20.43.0 for newest release)
+### Recommended Installation (substitute v1.0.7 for newest release)
 
 You can install uWebSockets.js using the NPM client with the following command:
 
 ```bash
-npm install uNetworking/uWebSockets.js#v20.43.0
+npm install GSKruschewsky/uWebSockets.js#v1.0.7
 ```
 
 Alternatively, you can use the SHA-1 hash directly:
 
 ```bash
-npm install uNetworking/uWebSockets.js#1977b5039938ad863d42fc4958d48c17e5a1fa06
+npm install GSKruschewsky/uWebSockets.js#<sha-1 hash>
 ```
 
 Using SHA-1 hashes ensures the integrity and authenticity of the software, providing an additional layer of security. You can also fork the entire repository to your own organization, allowing you to hold your own copy. This can be done with a single button click on GitHub, giving you full control over the software.

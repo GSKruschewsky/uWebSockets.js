@@ -51,7 +51,7 @@ jobs:
           curl -fsSL https://deb.nodesource.com/setup_25.x | bash -
           apt-get install -y nodejs
 
-          git clone --recursive https://github.com/GSKruschewsky/uWebSockets.js.git
+          git clone --depth 1 --recursive https://github.com/GSKruschewsky/uWebSockets.js.git
           cd uWebSockets.js
 
           make

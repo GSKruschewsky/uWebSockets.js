@@ -25,6 +25,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
     UniquePersistent<Function> droppedPf;
     UniquePersistent<Function> pingPf;
     UniquePersistent<Function> pongPf;
+    UniquePersistent<Function> rejectedHandshakePf;
 
     /* Get the behavior object */
     if (args.Length() == 1) {
@@ -130,6 +131,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
         droppedPf.Reset(args.GetIsolate(), Local<Function>::Cast(behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "dropped", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked()));
         pingPf.Reset(args.GetIsolate(), Local<Function>::Cast(behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "ping", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked()));
         pongPf.Reset(args.GetIsolate(), Local<Function>::Cast(behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "pong", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked()));
+        rejectedHandshakePf.Reset(args.GetIsolate(), Local<Function>::Cast(behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "rejectedHandshake", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked()));
     }
 
     /* Open handler is NOT optional for the wrapper */
@@ -243,6 +245,26 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
             PerSocketData *perSocketData = (PerSocketData *) ws->getUserData();
             Local<Value> argv[2] = {Local<Object>::New(isolate, perSocketData->socketPf), ArrayBuffer_New(isolate, (void *) message.data(), message.length())};
             CallJS(isolate, Local<Function>::New(isolate, pongPf), 2, argv);
+        };
+    }
+
+    if (rejectedHandshakePf != Undefined(isolate)) {
+        behavior.rejectedHandshake = [rejectedHandshakePf = std::move(rejectedHandshakePf), isolate](std::string_view status, std::string_view statusText, std::string_view body, auto *req) {
+            HandleScope hs(isolate);
+
+            Local<String> statusStr = String::NewFromUtf8(isolate, status.data(), NewStringType::kNormal, status.length()).ToLocalChecked();
+            Local<String> statusTextStr = String::NewFromUtf8(isolate, statusText.data(), NewStringType::kNormal, statusText.length()).ToLocalChecked();
+            Local<String> bodyStr = String::NewFromUtf8(isolate, body.data(), NewStringType::kNormal, body.length()).ToLocalChecked();
+            
+            // Create req object using the correct template index
+            Local<Object> reqObject = perContextData->reqTemplate[std::is_same<CLIENTAPP, uWS::CliSSLApp>::value].Get(isolate)->Clone();
+            reqObject->SetAlignedPointerInInternalField(0, req);
+
+            Local<Value> argv[4] = {statusStr, statusTextStr, bodyStr, reqObject};
+            CallJS(isolate, Local<Function>::New(isolate, rejectedHandshakePf), 4, argv);
+        
+            // Invalidate req object after use
+            reqObject->SetAlignedPointerInInternalField(0, nullptr);
         };
     }
 
