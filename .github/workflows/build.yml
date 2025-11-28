@@ -67,20 +67,38 @@ jobs:
           git fetch origin binaries:binaries
           git checkout binaries
 
+          # Remove old binaries for this arch before adding the new ones
+          case "$GITHUB_OS" in
+            ubuntu-24.04-arm)
+              # ARM64 binaries
+              git rm -f uws_linux_arm64_*.node 2>/dev/null || true
+              ;;
+            ubuntu-24.04)
+              # x64 binaries
+              git rm -f uws_linux_x64_*.node 2>/dev/null || true
+              ;;
+          esac
+
+          # Copy newly built binaries & JS wrapper from dist
           cp dist/*.node .
           cp dist/*.js .
+
+          # Store the source commit from master
           git rev-parse master > source_commit
           ls
 
-          git checkout master docs/index.d.ts
-          mv docs/index.d.ts .
+          # Get index.d.ts from master and write it as a top-level file
+          git show master:docs/index.d.ts > index.d.ts
+
+          # Stage new binaries + index.d.ts + source_commit
+          git add uws*.node uws.js index.d.ts source_commit
 
           git config --global user.email "luhkynaat@gmail.com"
           git config --global user.name "GSKruschewsky"
 
           git status
 
-          git commit -a -m "[GitHub Actions] Updated ${GITHUB_OS} binaries" || true
+          git commit -m "[GitHub Actions] Updated ${GITHUB_OS} binaries" || true
           git push --force "https://GSKruschewsky:${SECRET}@github.com/GSKruschewsky/uWebSockets.js" binaries
           EOF
 
