@@ -249,7 +249,8 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
     }
 
     if (rejectedHandshakePf != Undefined(isolate)) {
-        behavior.rejectedHandshake = [rejectedHandshakePf = std::move(rejectedHandshakePf), isolate](std::string_view status, std::string_view statusText, std::string_view body, auto *req) {
+        behavior.rejectedHandshake = [rejectedHandshakePf = std::move(rejectedHandshakePf), perContextData](std::string_view status, std::string_view statusText, std::string_view body, auto *req) {
+            Isolate *isolate = perContextData->isolate;
             HandleScope hs(isolate);
 
             Local<String> statusStr = String::NewFromUtf8(isolate, status.data(), NewStringType::kNormal, status.length()).ToLocalChecked();
