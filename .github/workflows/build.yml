@@ -47,9 +47,16 @@ jobs:
           $CC --version
           $CXX --version
 
-          # Install Node.js 25 (multi-arch, works on arm64 + amd64)
-          curl -fsSL https://deb.nodesource.com/setup_25.x | bash -
-          apt-get install -y nodejs
+          # Install Node.js 24 LTS from the official tarball (multi-arch, works on
+          # arm64 + amd64, includes npm, no third-party apt repo to go stale)
+          NODE_V=v24.15.0
+          case "$(uname -m)" in
+            aarch64) NODE_ARCH=arm64 ;;
+            *)       NODE_ARCH=x64 ;;
+          esac
+          curl -fsSL "https://nodejs.org/dist/${NODE_V}/node-${NODE_V}-linux-${NODE_ARCH}.tar.gz" | tar xz -C /usr/local --strip-components=1
+          node --version
+          npm --version
 
           git clone --depth 1 --recursive https://github.com/GSKruschewsky/uWebSockets.js.git
           cd uWebSockets.js
