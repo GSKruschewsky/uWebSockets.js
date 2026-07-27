@@ -1,5 +1,5 @@
 /*
- * Authored by Alex Hultman, 2018-2020.
+ * Authored by Alex Hultman, 2018-2026.
  * Intellectual property of third-party.
 
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,7 @@ struct HttpRequestWrapper {
     static inline constexpr decltype(auto) getHttpRequest(const FunctionCallbackInfo<Value> &args) {
         Isolate *isolate = args.GetIsolate();
         /* Thow on deleted request */
-        auto *req = (uWS::HttpRequest *) args.This()->GetAlignedPointerFromInternalField(0);
+        auto *req = (uWS::HttpRequest *) getInternalPointer(args.This());//->GetAlignedPointerFromInternalField(0);
         if (!req) {
             args.GetReturnValue().Set(isolate->ThrowException(v8::Exception::Error(String::NewFromUtf8(isolate, "uWS.HttpRequest must not be accessed after await or route handler return. See documentation for uWS.HttpRequest and consult the user manual.", NewStringType::kNormal).ToLocalChecked())));
         }
@@ -71,7 +71,7 @@ struct HttpRequestWrapper {
                 int index = args[0]->Uint32Value(isolate->GetCurrentContext()).ToChecked();
                 parameter = req->getParameter(index);
             } else {
-                NativeString data(args.GetIsolate(), args[0]);
+                NativeString<true> data(args.GetIsolate(), args[0]);
                 if (data.isInvalid(args)) {
                     return;
                 }
@@ -100,7 +100,7 @@ struct HttpRequestWrapper {
         Isolate *isolate = args.GetIsolate();
         auto *req = getHttpRequest<QUIC>(args);
         if (req) {
-            NativeString data(args.GetIsolate(), args[0]);
+            NativeString<true> data(args.GetIsolate(), args[0]);
             if (data.isInvalid(args)) {
                 return;
             }
@@ -158,7 +158,7 @@ struct HttpRequestWrapper {
 
             /* Do we have a key argument? */
             if (args.Length() == 1) {
-                NativeString keyString(isolate, args[0]);
+                NativeString<true> keyString(isolate, args[0]);
                 if (keyString.isInvalid(args)) {
                     return;
                 }

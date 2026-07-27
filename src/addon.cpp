@@ -1,5 +1,5 @@
 /*
- * Authored by Alex Hultman, 2018-2020.
+ * Authored by Alex Hultman, 2018-2026.
  * Intellectual property of third-party.
 
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -76,7 +76,7 @@ void uWS_getParts(const FunctionCallbackInfo<Value> &args) {
 
             std::string_view part = optionalPart.value();
 
-            Local<ArrayBuffer> partArrayBuffer = ArrayBuffer_New(isolate, (void *) part.data(), part.length());
+            Local<ArrayBuffer> partArrayBuffer = ArrayBuffer_NewCopy(isolate, (void *) part.data(), part.length());
             /* Map is 30% faster in this case, but a static Object could be faster still */
             Local<Object> partMap = Object::New(isolate);
             partMap->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "data", NewStringType::kNormal).ToLocalChecked(), partArrayBuffer).IsNothing();
@@ -371,10 +371,7 @@ void uWS_unlock(const FunctionCallbackInfo<Value> &args) {
     kvMutex.unlock();
 }
 
-PerContextData *Main(Local<Object> exports) {
-
-    /* We pass isolate everywhere */
-    Isolate *isolate = exports->GetIsolate();
+PerContextData *Main(Isolate *isolate, Local<Object> exports) {
 
     /* Init the template objects, SSL and non-SSL, store it in per context data */
     PerContextData *perContextData = new PerContextData;
@@ -462,13 +459,14 @@ PerContextData *Main(Local<Object> exports) {
 #include <node.h>
 extern "C" NODE_MODULE_EXPORT void
 NODE_MODULE_INITIALIZER(Local<Object> exports, Local<Value> module, Local<Context> context) {
+    Isolate *isolate = Isolate::GetCurrent();
     /* Integrate uSockets with existing libuv loop */
-    uWS::Loop::get(node::GetCurrentEventLoop(context->GetIsolate()));
+    uWS::Loop::get(node::GetCurrentEventLoop(isolate));
     /* Register vanilla V8 addon */
-    PerContextData *perContextData = Main(exports);
+    PerContextData *perContextData = Main(isolate, exports);
 
     /* We cannot rely on process.exit or process.beforeExit when it comes to WorkerThreads */
-    node::AddEnvironmentCleanupHook(context->GetIsolate(), [](void *arg) {
+    node::AddEnvironmentCleanupHook(isolate, [](void *arg) {
 
         PerContextData *perContextData = (PerContextData *) arg;
 

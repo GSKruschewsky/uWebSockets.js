@@ -1,5 +1,5 @@
 /*
- * Authored by Alex Hultman, 2018-2021.
+ * Authored by Alex Hultman, 2018-2026.
  * Intellectual property of third-party.
 
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +22,25 @@
 #include <openssl/x509.h>
 #include <v8.h>
 using namespace v8;
+
+/* Getting internal pointer is different in recent V8 versions */
+#if (V8_MAJOR_VERSION == 14)
+    void *getInternalPointer(const Local<Object> &holder) {
+        return holder->GetAlignedPointerFromInternalField(0, 0);
+    }
+
+    void setInternalPointer(const Local<Object> &holder, void *value) {
+        holder->SetAlignedPointerInInternalField(0, value, 0);
+    }
+#else
+    void *getInternalPointer(const Local<Object> &holder) {
+        return holder->GetAlignedPointerFromInternalField(0);
+    }
+
+    void setInternalPointer(const Local<Object> &holder, void *value) {
+        holder->SetAlignedPointerInInternalField(0, value);
+    }
+#endif
 
 /* Unfortunately we _have_ to depend on Node.js crap */
 #include <node.h>
@@ -124,22 +143,72 @@ struct Callback {
     }
 };
 
+template <bool AllowStringView = false>
 class NativeString {
     char *data;
     size_t length;
-    char utf8ValueMemory[sizeof(String::Utf8Value)];
-    String::Utf8Value *utf8Value = nullptr;
+    bool allocated = false;
     bool invalid = false;
+
+    // Static thread-local state shared by all NativeString instances on this thread
+    inline static thread_local std::vector<char> pool = std::vector<char>(128 * 1024);
+    inline static thread_local size_t pool_offset = 0;
+    inline static thread_local int ref_count = 0;
+
+    static char* alloc(size_t size) {
+        // Ensure size is a multiple of 8
+        size = (size + 7) & ~7;
+
+        // Fallback for allocations larger than the remaining pool space
+        if (pool_offset + size > pool.size()) {
+            // Mark for external cleanup if using instance-based logic
+            // (Note: In a pure static alloc, you'd need a way to track this)
+            return (char*)std::malloc(size);
+        }
+
+        char* ptr = pool.data() + pool_offset;
+        pool_offset += size;
+        return ptr;
+    }
+
+    // Provided for completeness, though the "pool" doesn't actually free individual slices
+    static void free(char* ptr) {
+        if (ptr < pool.data() || ptr >= pool.data() + pool.size()) {
+            ::free(ptr);
+        }
+    }
+
 public:
     NativeString(Isolate *isolate, const Local<Value> &value) {
+        if (ref_count == 0) {
+            pool_offset = 0; // Reset the "stack" when entering the first scope
+        }
+        ref_count++;
+
         if (value->IsUndefined()) {
             data = nullptr;
             length = 0;
         } else if (value->IsString()) {
-            utf8Value = new (utf8ValueMemory) String::Utf8Value(isolate, value);
-            data = (**utf8Value);
-            length = utf8Value->length();
-        } else if (value->IsTypedArray()) {
+            Local<String> string = Local<String>::Cast(value);
+
+            /* StringView path is Latin-1, not Utf-8 */
+
+            #if (V8_MAJOR_VERSION == 14)
+                // Fallback
+                length = string->Utf8LengthV2(isolate);
+                data = alloc(length);
+                allocated = true;
+                string->WriteUtf8V2(isolate, data, length);
+            #else
+                // Fallback
+                length = string->Utf8Length(isolate);
+                data = alloc(length);
+                allocated = true;
+                string->WriteUtf8(isolate, data, length, nullptr, String::WriteOptions::NO_NULL_TERMINATION);
+            #endif
+
+
+        } else if (value->IsArrayBufferView()) { /* DataView or TypedArray */
             Local<ArrayBufferView> arrayBufferView = Local<ArrayBufferView>::Cast(value);
             auto contents = arrayBufferView->Buffer()->GetBackingStore();
             length = arrayBufferView->ByteLength();
@@ -161,7 +230,7 @@ public:
 
     bool isInvalid(const FunctionCallbackInfo<Value> &args) {
         if (invalid) {
-            args.GetReturnValue().Set(args.GetIsolate()->ThrowException(v8::Exception::Error(String::NewFromUtf8(args.GetIsolate(), "Text and data can only be passed by String, ArrayBuffer or TypedArray.", NewStringType::kNormal).ToLocalChecked())));
+            args.GetReturnValue().Set(args.GetIsolate()->ThrowException(v8::Exception::Error(String::NewFromUtf8(args.GetIsolate(), "Text and data can only be passed by String, ArrayBuffer or ArrayBufferView.", NewStringType::kNormal).ToLocalChecked())));
         }
         return invalid;
     }
@@ -171,8 +240,9 @@ public:
     }
 
     ~NativeString() {
-        if (utf8Value) {
-            utf8Value->~Utf8Value();
+        ref_count--;
+        if (allocated) {
+            free(data);
         }
     }
 };

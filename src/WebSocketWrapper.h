@@ -1,5 +1,5 @@
 /*
- * Authored by Alex Hultman, 2018-2020.
+ * Authored by Alex Hultman, 2018-2026.
  * Intellectual property of third-party.
 
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +27,7 @@ struct WebSocketWrapper {
     template <bool SSL, bool isServer>
     static inline uWS::WebSocket<SSL, isServer, PerSocketData> *getWebSocket(const FunctionCallbackInfo<Value> &args) {
         Isolate *isolate = args.GetIsolate();
-        auto *ws = (uWS::WebSocket<SSL, isServer, PerSocketData> *) args.This()->GetAlignedPointerFromInternalField(0);
+        auto *ws = (uWS::WebSocket<SSL, isServer, PerSocketData> *) getInternalPointer(args.This());//->GetAlignedPointerFromInternalField(0);
         if (!ws) {
             args.GetReturnValue().Set(isolate->ThrowException(v8::Exception::Error(String::NewFromUtf8(isolate, "Invalid access of closed uWS.WebSocket/SSLWebSocket.", NewStringType::kNormal).ToLocalChecked())));
         }
@@ -35,7 +35,8 @@ struct WebSocketWrapper {
     }
 
     static inline void invalidateWsObject(const FunctionCallbackInfo<Value> &args) {
-        args.This()->SetAlignedPointerInInternalField(0, nullptr);
+        //args.This()->SetAlignedPointerInInternalField(0, nullptr);
+        setInternalPointer(args.This(), nullptr);
     }
 
     /* Takes nothing returns holder (only used to fool TypeScript, as a conversion from WS to UserData) */
@@ -50,12 +51,11 @@ struct WebSocketWrapper {
         Isolate *isolate = args.GetIsolate();
         auto *ws = getWebSocket<SSL, isServer>(args);
         if (ws) {
-            NativeString topic(isolate, args[0]);
+            NativeString<true> topic(isolate, args[0]);
             if (topic.isInvalid(args)) {
                 return;
             }
-            bool nonStrict = args.Length() > 1 && args[1]->BooleanValue(isolate);
-            bool success = ws->subscribe(topic.getString(), nonStrict);
+            bool success = ws->subscribe(topic.getString());
             args.GetReturnValue().Set(Boolean::New(isolate, success));
         }
     }
@@ -66,12 +66,11 @@ struct WebSocketWrapper {
         Isolate *isolate = args.GetIsolate();
         auto *ws = getWebSocket<SSL, isServer>(args);
         if (ws) {
-            NativeString topic(isolate, args[0]);
+            NativeString<true> topic(isolate, args[0]);
             if (topic.isInvalid(args)) {
                 return;
             }
-            bool nonStrict = args.Length() > 1 && args[1]->BooleanValue(isolate);
-            bool success = ws->unsubscribe(topic.getString(), nonStrict);
+            bool success = ws->unsubscribe(topic.getString());
             args.GetReturnValue().Set(Boolean::New(isolate, success));
         }
     }
@@ -86,16 +85,19 @@ struct WebSocketWrapper {
                 return;
             }
 
-            NativeString topic(isolate, args[0]);
+            bool isBinary = args[2]->BooleanValue(isolate);
+            bool compress = args[3]->BooleanValue(isolate);
+
+            NativeString<true> topic(isolate, args[0]);
             if (topic.isInvalid(args)) {
                 return;
             }
-            NativeString message(isolate, args[1]);
+            NativeString<true> message(isolate, args[1]);
             if (message.isInvalid(args)) {
                 return;
             }
 
-            bool success = ws->publish(topic.getString(), message.getString(), args[2]->BooleanValue(isolate) ? uWS::OpCode::BINARY : uWS::OpCode::TEXT, args[3]->BooleanValue(isolate));
+            bool success = ws->publish(topic.getString(), message.getString(), isBinary ? uWS::OpCode::BINARY : uWS::OpCode::TEXT, compress);
             args.GetReturnValue().Set(Boolean::New(isolate, success));
         }
     }
@@ -124,7 +126,7 @@ struct WebSocketWrapper {
                 code = args[0]->Uint32Value(isolate->GetCurrentContext()).ToChecked();
             }
 
-            NativeString message(args.GetIsolate(), args[1]);
+            NativeString<true> message(args.GetIsolate(), args[1]);
             if (message.isInvalid(args)) {
                 return;
             }
@@ -155,6 +157,17 @@ struct WebSocketWrapper {
             std::string_view ip = ws->getRemoteAddressAsText();
 
             args.GetReturnValue().Set(ArrayBuffer_NewCopy(isolate, (void *) ip.data(), ip.length()));
+        }
+    }
+
+    /* Takes nothing, returns integer */
+    template <bool SSL, bool isServer>
+    static void uWS_WebSocket_getRemotePort(const FunctionCallbackInfo<Value> &args) {
+        Isolate *isolate = args.GetIsolate();
+        auto *ws = getWebSocket<SSL, isServer>(args);
+        if (ws) {
+            unsigned int port = ws->getRemotePort();
+            args.GetReturnValue().Set(Integer::NewFromUnsigned(isolate, port));
         }
     }
 
@@ -226,12 +239,16 @@ struct WebSocketWrapper {
         Isolate *isolate = args.GetIsolate();
         auto *ws = getWebSocket<SSL, isServer>(args);
         if (ws) {
-            NativeString message(args.GetIsolate(), args[0]);
+
+            bool isBinary = args[1]->BooleanValue(isolate);
+            bool compress = args[2]->BooleanValue(isolate);
+
+            NativeString<true> message(args.GetIsolate(), args[0]);
             if (message.isInvalid(args)) {
                 return;
             }
 
-            unsigned int sendStatus = ws->send(message.getString(), args[1]->BooleanValue(isolate) ? uWS::OpCode::BINARY : uWS::OpCode::TEXT, args[2]->BooleanValue(isolate));
+            unsigned int sendStatus = ws->send(message.getString(), isBinary ? uWS::OpCode::BINARY : uWS::OpCode::TEXT, compress);
 
             args.GetReturnValue().Set(Integer::NewFromUnsigned(isolate, sendStatus));
         }
@@ -243,7 +260,7 @@ struct WebSocketWrapper {
         Isolate *isolate = args.GetIsolate();
         auto *ws = getWebSocket<SSL, isServer>(args);
         if (ws) {
-            NativeString topic(args.GetIsolate(), args[0]);
+            NativeString<true> topic(args.GetIsolate(), args[0]);
             if (topic.isInvalid(args)) {
                 return;
             }
@@ -260,7 +277,7 @@ struct WebSocketWrapper {
         Isolate *isolate = args.GetIsolate();
         auto *ws = getWebSocket<SSL, isServer>(args);
         if (ws) {
-            NativeString message(args.GetIsolate(), args[0]);
+            NativeString<true> message(args.GetIsolate(), args[0]);
             if (message.isInvalid(args)) {
                 return;
             }
@@ -308,6 +325,7 @@ struct WebSocketWrapper {
     }
 
     template <bool SSL, bool isServer>
+
     static Local<Object> init(Isolate *isolate) {
         Local<FunctionTemplate> wsTemplateLocal = FunctionTemplate::New(isolate);
         if (SSL) {
@@ -334,7 +352,9 @@ struct WebSocketWrapper {
         wsTemplateLocal->PrototypeTemplate()->Set(String::NewFromUtf8(isolate, "cork", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_WebSocket_cork<SSL, isServer>));
         wsTemplateLocal->PrototypeTemplate()->Set(String::NewFromUtf8(isolate, "ping", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_WebSocket_ping<SSL, isServer>));
         wsTemplateLocal->PrototypeTemplate()->Set(String::NewFromUtf8(isolate, "getRemoteAddressAsText", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_WebSocket_getRemoteAddressAsText<SSL, isServer>));
+        wsTemplateLocal->PrototypeTemplate()->Set(String::NewFromUtf8(isolate, "getRemotePort", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_WebSocket_getRemotePort<SSL, isServer>));
         wsTemplateLocal->PrototypeTemplate()->Set(String::NewFromUtf8(isolate, "isSubscribed", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_WebSocket_isSubscribed<SSL, isServer>));
+
 
         /* This one does not exist in C++ */
         wsTemplateLocal->PrototypeTemplate()->Set(String::NewFromUtf8(isolate, "getTopics", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_WebSocket_getTopics<SSL, isServer>));
