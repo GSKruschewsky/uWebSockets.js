@@ -13,7 +13,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
 
     Isolate *isolate = args.GetIsolate();
     PerContextData *perContextData = (PerContextData *) Local<External>::Cast(args.Data())->Value();
-    CLIENTAPP *app = (CLIENTAPP *) args.This()->GetAlignedPointerFromInternalField(0);
+    CLIENTAPP *app = (CLIENTAPP *) getInternalPointer(args.This());//->GetAlignedPointerFromInternalField(0);
 
     /* This one is default constructed with defaults */
     typename CLIENTAPP::template WebSocketBehavior<PerSocketData> behavior = {};
@@ -141,7 +141,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
 
         /* Create a new websocket object */
         Local<Object> wsObject = perContextData->wsTemplate[getAppTypeIndex<CLIENTAPP>()].Get(isolate)->Clone();
-        wsObject->SetAlignedPointerInInternalField(0, ws);
+        setInternalPointer(wsObject, ws);//->SetAlignedPointerInInternalField(0, ws);
 
         /* Retrieve temporary userData object */
         PerSocketData *perSocketData = (PerSocketData *) ws->getUserData();
@@ -195,7 +195,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
         Local<Object> wsObject = Local<Object>::New(isolate, perSocketData->socketPf);
 
         /* Invalidate this wsObject */
-        wsObject->SetAlignedPointerInInternalField(0, nullptr);
+        setInternalPointer(wsObject, nullptr);//->SetAlignedPointerInInternalField(0, nullptr);
 
         /* Only call close handler if we have one set */
         Local<Function> closeLf = Local<Function>::New(isolate, closePf);
@@ -259,13 +259,13 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
             
             // Create req object using the correct template index
             Local<Object> reqObject = perContextData->reqTemplate[std::is_same<CLIENTAPP, uWS::CliSSLApp>::value].Get(isolate)->Clone();
-            reqObject->SetAlignedPointerInInternalField(0, req);
+            setInternalPointer(reqObject, req);//->SetAlignedPointerInInternalField(0, req);
 
             Local<Value> argv[4] = {statusStr, statusTextStr, bodyStr, reqObject};
             CallJS(isolate, Local<Function>::New(isolate, rejectedHandshakePf), 4, argv);
         
             // Invalidate req object after use
-            reqObject->SetAlignedPointerInInternalField(0, nullptr);
+            setInternalPointer(reqObject, nullptr);//->SetAlignedPointerInInternalField(0, nullptr);
         };
     }
 
@@ -277,7 +277,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
 
 template <typename CLIENTAPP>
 void uWS_ClientApp_connect(const FunctionCallbackInfo<Value> &args) {
-    CLIENTAPP *app = (CLIENTAPP *) args.This()->GetAlignedPointerFromInternalField(0);
+    CLIENTAPP *app = (CLIENTAPP *) getInternalPointer(args.This());//->GetAlignedPointerFromInternalField(0);
 
     Isolate *isolate = args.GetIsolate();
 
@@ -410,7 +410,7 @@ void uWS_ClientApp(const FunctionCallbackInfo<Value> &args) {
     }
 
     Local<Object> localClientApp = clientAppTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
-    localClientApp->SetAlignedPointerInInternalField(0, app);
+    setInternalPointer(localClientApp, app);//->SetAlignedPointerInInternalField(0, app);
 
     args.GetReturnValue().Set(localClientApp);
 }
