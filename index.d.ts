@@ -326,6 +326,11 @@ export interface WebSocketBehavior<UserData> {
      * @param req - HttpRequest object containing response headers
      */
     rejectedHandshake?: (status: string, statusText: string, body: string, req: HttpRequest) => void | Promise<void>;
+    /** (Client only) Handler for a failed connection attempt (refused, unreachable, name resolution failure).
+     * Fires instead of open/close when the TCP connection itself could not be established.
+     * @param code - Platform errno (e.g. 111 = ECONNREFUSED on Linux), or 0 when the attempt could not be made at all (e.g. DNS failure)
+     */
+    connectError?: (code: number) => void | Promise<void>;
 }
 
 /** Options used when constructing an app. Especially for SSLApp.
