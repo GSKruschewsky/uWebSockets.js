@@ -15,6 +15,15 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
     PerContextData *perContextData = (PerContextData *) Local<External>::Cast(args.Data())->Value();
     CLIENTAPP *app = (CLIENTAPP *) getInternalPointer(args.This());//->GetAlignedPointerFromInternalField(0);
 
+    /* Unlike the server API there is no pattern argument: ws() takes the behavior
+     * object alone. Anything else (typically a server-style ws('/*', behavior)
+     * call) must be rejected here - proceeding would leave every handler
+     * persistent empty and crash natively when the first socket event fires. */
+    if (args.Length() != 1 || !args[0]->IsObject()) {
+        args.GetReturnValue().Set(isolate->ThrowException(v8::Exception::TypeError(String::NewFromUtf8(isolate, "ws(behavior) takes exactly one behavior object; the client API has no pattern argument.", NewStringType::kNormal).ToLocalChecked())));
+        return;
+    }
+
     /* This one is default constructed with defaults */
     typename CLIENTAPP::template WebSocketBehavior<PerSocketData> behavior = {};
 
@@ -152,7 +161,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
         perSocketData->socketPf.Reset(isolate, wsObject);
 
         Local<Function> openLf = Local<Function>::New(isolate, openPf);
-        if (!openLf->IsUndefined()) {
+        if (!openLf.IsEmpty() && !openLf->IsUndefined()) {
             Local<Value> argv[] = {wsObject};
             CallJS(isolate, openLf, 1, argv);
         }
@@ -201,7 +210,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
 
         /* Only call close handler if we have one set */
         Local<Function> closeLf = Local<Function>::New(isolate, closePf);
-        if (!closeLf->IsUndefined()) {
+        if (!closeLf.IsEmpty() && !closeLf->IsUndefined()) {
             Local<Value> argv[3] = {wsObject, Integer::New(isolate, code), messageArrayBuffer};
             CallJS(isolate, closeLf, 3, argv);
         }
