@@ -26,6 +26,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
     UniquePersistent<Function> pingPf;
     UniquePersistent<Function> pongPf;
     UniquePersistent<Function> rejectedHandshakePf;
+    UniquePersistent<Function> connectErrorPf;
 
     /* Get the behavior object */
     if (args.Length() == 1) {
@@ -132,6 +133,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
         pingPf.Reset(args.GetIsolate(), Local<Function>::Cast(behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "ping", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked()));
         pongPf.Reset(args.GetIsolate(), Local<Function>::Cast(behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "pong", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked()));
         rejectedHandshakePf.Reset(args.GetIsolate(), Local<Function>::Cast(behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "rejectedHandshake", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked()));
+        connectErrorPf.Reset(args.GetIsolate(), Local<Function>::Cast(behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "connectError", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked()));
     }
 
     /* Open handler is NOT optional for the wrapper */
@@ -266,6 +268,15 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
         
             // Invalidate req object after use
             setInternalPointer(reqObject, nullptr);//->SetAlignedPointerInInternalField(0, nullptr);
+        };
+    }
+
+    if (connectErrorPf != Undefined(isolate)) {
+        behavior.connectError = [connectErrorPf = std::move(connectErrorPf), isolate](int code) {
+            HandleScope hs(isolate);
+
+            Local<Value> argv[1] = {Integer::New(isolate, code)};
+            CallJS(isolate, Local<Function>::New(isolate, connectErrorPf), 1, argv);
         };
     }
 
