@@ -44,8 +44,15 @@ jobs:
           curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_V}/cmake-${CMAKE_V}-linux-${CMAKE_ARCH}.tar.gz" | tar xz -C /usr/local --strip-components=1
           cmake --version
 
-          # Newer GCC (GCC 11) for C++20 <source_location>
-          add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          # Newer GCC (GCC 11) for C++20 <source_location>.
+          # add-apt-repository resolves the PPA signing key over HKP against
+          # keyserver.ubuntu.com, which times out regularly and has killed whole
+          # builds. Configure the PPA by hand instead: repo line plus the signing
+          # key fetched over plain HTTPS from the Launchpad API.
+          echo "deb https://ppa.launchpadcontent.net/ubuntu-toolchain-r/test/ubuntu focal main" > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list
+          curl -fsSL "https://api.launchpad.net/devel/~ubuntu-toolchain-r/+archive/ubuntu/test?ws.op=getSigningKeyData" \
+            | python3 -c 'import sys, json; sys.stdout.write(json.load(sys.stdin))' \
+            > /etc/apt/trusted.gpg.d/ubuntu-toolchain-r-test.asc
           apt-get update
           apt-get install -y gcc-11 g++-11
           
