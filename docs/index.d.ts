@@ -319,15 +319,20 @@ export interface WebSocketBehavior<UserData> {
     pong?: (ws: WebSocket<UserData>, message: ArrayBuffer) => void;
     /** Handler for subscription changes. */
     subscription?: (ws: WebSocket<UserData>, topic: ArrayBuffer, newCount: number, oldCount: number) => void;
-    /** (Client only) Handler for rejected WebSocket handshake. Called when the server responds with a non-101 status code.
-     * @param status - HTTP status code as string (e.g., "403")
-     * @param statusText - HTTP status text (e.g., "Forbidden")
-     * @param body - Response body as string
-     * @param req - HttpRequest object containing response headers
+    /** (Client only) Handler for a failed WebSocket handshake. Called when the server responds with a non-101
+     * status code, and also for any connect attempt that dies before completing the handshake (connection
+     * refused with no connectError registered, reset, timeout, or an unparseable response) — in those cases
+     * status and statusText are empty strings and body carries whatever raw bytes were received, if any.
+     * Exactly one of open, rejectedHandshake or connectError fires per connect attempt.
+     * @param status - HTTP status code as string (e.g., "403"), or "" when no HTTP response was parsed
+     * @param statusText - HTTP status text (e.g., "Forbidden"), or "" when no HTTP response was parsed
+     * @param body - Response body (or raw received bytes) as string
+     * @param req - HttpRequest object containing response headers (empty when no HTTP response was parsed)
      */
     rejectedHandshake?: (status: string, statusText: string, body: string, req: HttpRequest) => void | Promise<void>;
     /** (Client only) Handler for a failed connection attempt (refused, unreachable, name resolution failure).
-     * Fires instead of open/close when the TCP connection itself could not be established.
+     * Fires instead of open/close when the TCP connection itself could not be established. When this handler
+     * is not registered, such failures are reported through rejectedHandshake instead (with empty status).
      * @param code - Platform errno (e.g. 111 = ECONNREFUSED on Linux), or 0 when the attempt could not be made at all (e.g. DNS failure)
      */
     connectError?: (code: number) => void | Promise<void>;
