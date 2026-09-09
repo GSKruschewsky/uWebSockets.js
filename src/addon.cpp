@@ -371,6 +371,12 @@ void uWS_unlock(const FunctionCallbackInfo<Value> &args) {
     kvMutex.unlock();
 }
 
+/* CLOCK_REALTIME now, in ns since the Unix epoch, as a BigInt: the same clock as the receive
+ * timestamps handed to a client message handler with rxTimestamps enabled */
+void uWS_nowNs(const FunctionCallbackInfo<Value> &args) {
+    args.GetReturnValue().Set(BigInt::NewFromUnsigned(args.GetIsolate(), us_realtime_ns()));
+}
+
 PerContextData *Main(Isolate *isolate, Local<Object> exports) {
 
     /* Init the template objects, SSL and non-SSL, store it in per context data */
@@ -424,6 +430,7 @@ PerContextData *Main(Isolate *isolate, Local<Object> exports) {
     /* Expose some µSockets functions directly under uWS namespace */
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "us_listen_socket_close", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_us_listen_socket_close)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "us_socket_local_port", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_us_socket_local_port)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
+    exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "nowNs", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_nowNs)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
 
     /* Compression enum */
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "DISABLED", NewStringType::kNormal).ToLocalChecked(), Integer::NewFromUnsigned(isolate, uWS::DISABLED)).ToChecked();

@@ -11,8 +11,11 @@
 µWebSockets.js is a standards compliant web server written in 10,000 lines of C++. It is exposed to Node.js as a simple-to-use, native V8 addon and performs at least **[10x that of Socket.IO](https://medium.com/swlh/100k-secure-websockets-with-raspberry-pi-4-1ba5d2127a23)**, **[8.5x that of Fastify](https://alexhultman.medium.com/serving-100k-requests-second-from-a-fanless-raspberry-pi-4-over-ethernet-fdd2c2e05a1e)**. It makes up the **[core components of Bun](https://twitter.com/uNetworkingAB/status/1810380862556397887)** and is the **[fastest standards compliant web server](https://x.com/uNetworkingAB/status/1812914159295869075)** in the TechEmpower (**[not endorsed](https://x.com/uNetworkingAB/status/1811425564764610926)**) benchmarks.
 
 We aren't in the NPM registry but you can easily install it with the NPM client:
-* `npm install GSKruschewsky/uWebSockets.js#v1.0.11`
+* `npm install GSKruschewsky/uWebSockets.js#v1.0.12`
 * Browse the [documentation](https://unetworking.github.io/uWebSockets.js/generated/functions/App.html) and see the [main repo](https://github.com/uNetworking/uWebSockets). There are tons of [examples](examples) but here's the gist of it all:
+
+### :satellite: WebSocket client
+This fork adds a WebSocket client (`uWS.CliApp` / `uWS.CliSSLApp`) with the same behavior object as the server, plus client-only options: `onlyLastPacketFrame`, `localAddress`, `customHeaders`, `rejectedHandshake`, `connectError` and `rxTimestamps`. With `rxTimestamps: true` (Linux `SO_TIMESTAMPING`) the message handler is called as `message(ws, message, isBinary, rxTimestampNs, rxTimestampFromKernel)`: `rxTimestampNs` is a `bigint` on the `CLOCK_REALTIME` clock, taken by the kernel when the TCP segment carrying the message arrived, before any userspace work; `rxTimestampFromKernel` is `false` when the value is a userspace fallback (non-Linux, old kernel, or the first packets right after the option is first enabled). `uWS.nowNs()` returns the same clock now, so `uWS.nowNs() - rxTimestampNs` is the time the message waited between the kernel and your handler. Off by default: without the option the receive path is exactly what it was. See [tests/rxtimestamps.js](tests/rxtimestamps.js).
 
 ### :dart: In essence
 

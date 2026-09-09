@@ -84,6 +84,7 @@ jobs:
           cd tests
           npm install ws
           node smoke.js
+          node rxtimestamps.js
           cd ..
 
           ls dist

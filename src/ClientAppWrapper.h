@@ -103,6 +103,12 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
             behavior.onlyLastPacketFrame = maybeOnlyLastPacketFrame.ToLocalChecked()->BooleanValue(isolate);
         }
 
+        /* rxTimestamps or default */
+        MaybeLocal<Value> maybeRxTimestamps = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "rxTimestamps", NewStringType::kNormal).ToLocalChecked());
+        if (!maybeRxTimestamps.IsEmpty() && !maybeRxTimestamps.ToLocalChecked()->IsUndefined()) {
+            behavior.rxTimestamps = maybeRxTimestamps.ToLocalChecked()->BooleanValue(isolate);
+        }
+
         /* localAddress or default */
         MaybeLocal<Value> maybeLocalAddress = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "localAddress", NewStringType::kNormal).ToLocalChecked());
         if (!maybeLocalAddress.IsEmpty() && !maybeLocalAddress.ToLocalChecked()->IsUndefined()) {
@@ -169,21 +175,48 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
 
     /* Message handler is always optional */
     if (messagePf != Undefined(isolate)) {
-        behavior.message = [messagePf = std::move(messagePf), isolate](auto *ws, std::string_view message, uWS::OpCode opCode) {
-            HandleScope hs(isolate);
+        if (behavior.rxTimestamps) {
+            /* Opt-in receive timestamps: the loop parks the kernel stamp of the read being
+             * dispatched, and it reaches JS as two extra arguments - message(ws, message,
+             * isBinary, rxTimestampNs, rxTimestampFromKernel) - so nothing has to be polled */
+            struct us_loop_t *loop = (struct us_loop_t *) uWS::Loop::get();
+            behavior.message = [messagePf = std::move(messagePf), isolate, loop](auto *ws, std::string_view message, uWS::OpCode opCode) {
+                HandleScope hs(isolate);
 
-            Local<ArrayBuffer> messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length());
+                Local<ArrayBuffer> messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length());
 
-            PerSocketData *perSocketData = (PerSocketData *) ws->getUserData();
-            Local<Value> argv[3] = {Local<Object>::New(isolate, perSocketData->socketPf),
-                                    messageArrayBuffer,
-                                    Boolean::New(isolate, opCode == uWS::OpCode::BINARY)};
+                int fromKernel = 0;
+                unsigned long long rxNs = us_loop_last_rx_timestamp(loop, &fromKernel);
 
-            CallJS(isolate, Local<Function>::New(isolate, messagePf), 3, argv);
+                PerSocketData *perSocketData = (PerSocketData *) ws->getUserData();
+                Local<Value> argv[5] = {Local<Object>::New(isolate, perSocketData->socketPf),
+                                        messageArrayBuffer,
+                                        Boolean::New(isolate, opCode == uWS::OpCode::BINARY),
+                                        BigInt::NewFromUnsigned(isolate, rxNs),
+                                        Boolean::New(isolate, fromKernel == 1)};
 
-            /* Important: we clear the ArrayBuffer to make sure it is not invalidly used after return */
-            messageArrayBuffer->Detach();
-        };
+                CallJS(isolate, Local<Function>::New(isolate, messagePf), 5, argv);
+
+                /* Important: we clear the ArrayBuffer to make sure it is not invalidly used after return */
+                messageArrayBuffer->Detach();
+            };
+        } else {
+            behavior.message = [messagePf = std::move(messagePf), isolate](auto *ws, std::string_view message, uWS::OpCode opCode) {
+                HandleScope hs(isolate);
+
+                Local<ArrayBuffer> messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length());
+
+                PerSocketData *perSocketData = (PerSocketData *) ws->getUserData();
+                Local<Value> argv[3] = {Local<Object>::New(isolate, perSocketData->socketPf),
+                                        messageArrayBuffer,
+                                        Boolean::New(isolate, opCode == uWS::OpCode::BINARY)};
+
+                CallJS(isolate, Local<Function>::New(isolate, messagePf), 3, argv);
+
+                /* Important: we clear the ArrayBuffer to make sure it is not invalidly used after return */
+                messageArrayBuffer->Detach();
+            };
+        }
     }
 
     /* Drain handler is always optional */
