@@ -295,6 +295,14 @@ export interface WebSocketBehavior<UserData> {
     skipUTF8Validation?: boolean;
     /** (Client only) Whether or not to only parse the last websocket frame from the TCP packet. Defaults to false. */
     onlyLastPacketFrame?: boolean;
+    /** (Client only) Kernel receive timestamps (Linux SO_TIMESTAMPING). When true, the message handler is called
+     * with two extra arguments: rxTimestampNs (bigint, ns since the Unix epoch, CLOCK_REALTIME) — the time the
+     * kernel received the TCP segment that carried the message, taken before any userspace processing — and
+     * rxTimestampFromKernel (boolean), false when the kernel gave no stamp (non-Linux, old kernel) and the value
+     * is a userspace fallback taken right after the read. With TLS the stamp belongs to the decrypted read as a
+     * whole: every message decoded from one read shares it. Compare with uWS.nowNs(). Defaults to false, which
+     * leaves the receive path exactly as it is without the option. */
+    rxTimestamps?: boolean;
     /** (Client only) Optional local address to bind the socket to. */
     localAddress?: RecognizedString;
     /** (Client only) Optional custom headers to add to the WebSocket handshake request. */
@@ -305,8 +313,9 @@ export interface WebSocketBehavior<UserData> {
     upgrade?: (res: HttpResponse, req: HttpRequest, context: us_socket_context_t) => void | Promise<void>;
     /** Handler for new WebSocket connection. WebSocket is valid from open to close, no errors. */
     open?: (ws: WebSocket<UserData>) => void | Promise<void>;
-    /** Handler for a WebSocket message. Messages are given as ArrayBuffer no matter if they are binary or not. Given ArrayBuffer is valid during the lifetime of this callback (until first await or return) and will be neutered. */
-    message?: (ws: WebSocket<UserData>, message: ArrayBuffer, isBinary: boolean) => void | Promise<void>;
+    /** Handler for a WebSocket message. Messages are given as ArrayBuffer no matter if they are binary or not. Given ArrayBuffer is valid during the lifetime of this callback (until first await or return) and will be neutered.
+     * (Client only) With rxTimestamps enabled, rxTimestampNs and rxTimestampFromKernel are passed as well. */
+    message?: (ws: WebSocket<UserData>, message: ArrayBuffer, isBinary: boolean, rxTimestampNs?: bigint, rxTimestampFromKernel?: boolean) => void | Promise<void>;
     /** Handler for a dropped WebSocket message. Messages can be dropped due to specified backpressure settings. Messages are given as ArrayBuffer no matter if they are binary or not. Given ArrayBuffer is valid during the lifetime of this callback (until first await or return) and will be neutered. */
     dropped?: (ws: WebSocket<UserData>, message: ArrayBuffer, isBinary: boolean) => void | Promise<void>;
     /** Handler for when WebSocket backpressure drains. Check ws.getBufferedAmount(). Use this to guide / drive your backpressure throttling. */
@@ -444,6 +453,11 @@ export function us_listen_socket_close(listenSocket: us_listen_socket) : void;
 
 /** Gets local port of socket (or listenSocket) or -1. */
 export function us_socket_local_port(socket: us_socket | us_listen_socket) : number;
+
+/** CLOCK_REALTIME now, in nanoseconds since the Unix epoch. The same clock as the receive timestamps handed to a
+ * client message handler with rxTimestamps enabled, so (nowNs() - rxTimestampNs) is the time spent between the
+ * kernel receiving the segment and the handler running. */
+export function nowNs() : bigint;
 
 export interface MultipartField {
     data: ArrayBuffer;
