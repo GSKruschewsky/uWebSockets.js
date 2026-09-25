@@ -29,6 +29,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
 
     UniquePersistent<Function> openPf;
     UniquePersistent<Function> messagePf;
+    bool messageView = false;
     UniquePersistent<Function> drainPf;
     UniquePersistent<Function> closePf;
     UniquePersistent<Function> droppedPf;
@@ -101,6 +102,14 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
         MaybeLocal<Value> maybeOnlyLastPacketFrame = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "onlyLastPacketFrame", NewStringType::kNormal).ToLocalChecked());
         if (!maybeOnlyLastPacketFrame.IsEmpty() && !maybeOnlyLastPacketFrame.ToLocalChecked()->IsUndefined()) {
             behavior.onlyLastPacketFrame = maybeOnlyLastPacketFrame.ToLocalChecked()->BooleanValue(isolate);
+        }
+
+        /* messageView or default: hand the message handler a Uint8Array over the loop's receive buffer
+         * (valid only during the callback, like the ArrayBuffer it replaces) instead of a fresh, detached-on-return
+         * ArrayBuffer per message; messages reassembled or inflated outside those buffers keep the ArrayBuffer path */
+        MaybeLocal<Value> maybeMessageView = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "messageView", NewStringType::kNormal).ToLocalChecked());
+        if (!maybeMessageView.IsEmpty() && !maybeMessageView.ToLocalChecked()->IsUndefined()) {
+            messageView = maybeMessageView.ToLocalChecked()->BooleanValue(isolate);
         }
 
         /* rxTimestamps or default */
@@ -180,17 +189,18 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
              * dispatched, and it reaches JS as two extra arguments - message(ws, message,
              * isBinary, rxTimestampNs, rxTimestampFromKernel) - so nothing has to be polled */
             struct us_loop_t *loop = (struct us_loop_t *) uWS::Loop::get();
-            behavior.message = [messagePf = std::move(messagePf), isolate, loop](auto *ws, std::string_view message, uWS::OpCode opCode) {
+            behavior.message = [messagePf = std::move(messagePf), isolate, loop, messageView](auto *ws, std::string_view message, uWS::OpCode opCode) {
                 HandleScope hs(isolate);
 
-                Local<ArrayBuffer> messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length());
+                Local<ArrayBuffer> messageArrayBuffer;
+                Local<Value> messageValue = messageView ? RecvBufferView(isolate, loop, message, messageArrayBuffer) : (messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length()));
 
                 int fromKernel = 0;
                 unsigned long long rxNs = us_loop_last_rx_timestamp(loop, &fromKernel);
 
                 PerSocketData *perSocketData = (PerSocketData *) ws->getUserData();
                 Local<Value> argv[5] = {Local<Object>::New(isolate, perSocketData->socketPf),
-                                        messageArrayBuffer,
+                                        messageValue,
                                         Boolean::New(isolate, opCode == uWS::OpCode::BINARY),
                                         BigInt::NewFromUnsigned(isolate, rxNs),
                                         Boolean::New(isolate, fromKernel == 1)};
@@ -198,23 +208,25 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
                 CallJS(isolate, Local<Function>::New(isolate, messagePf), 5, argv);
 
                 /* Important: we clear the ArrayBuffer to make sure it is not invalidly used after return */
-                messageArrayBuffer->Detach();
+                if (!messageArrayBuffer.IsEmpty()) messageArrayBuffer->Detach();
             };
         } else {
-            behavior.message = [messagePf = std::move(messagePf), isolate](auto *ws, std::string_view message, uWS::OpCode opCode) {
+            struct us_loop_t *loop = (struct us_loop_t *) uWS::Loop::get();
+            behavior.message = [messagePf = std::move(messagePf), isolate, loop, messageView](auto *ws, std::string_view message, uWS::OpCode opCode) {
                 HandleScope hs(isolate);
 
-                Local<ArrayBuffer> messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length());
+                Local<ArrayBuffer> messageArrayBuffer;
+                Local<Value> messageValue = messageView ? RecvBufferView(isolate, loop, message, messageArrayBuffer) : (messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length()));
 
                 PerSocketData *perSocketData = (PerSocketData *) ws->getUserData();
                 Local<Value> argv[3] = {Local<Object>::New(isolate, perSocketData->socketPf),
-                                        messageArrayBuffer,
+                                        messageValue,
                                         Boolean::New(isolate, opCode == uWS::OpCode::BINARY)};
 
                 CallJS(isolate, Local<Function>::New(isolate, messagePf), 3, argv);
 
                 /* Important: we clear the ArrayBuffer to make sure it is not invalidly used after return */
-                messageArrayBuffer->Detach();
+                if (!messageArrayBuffer.IsEmpty()) messageArrayBuffer->Detach();
             };
         }
     }

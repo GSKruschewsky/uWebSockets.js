@@ -45,13 +45,27 @@ using namespace v8;
 /* Unfortunately we _have_ to depend on Node.js crap */
 #include <node.h>
 
+/* Set between the loop's pre and post handlers (addon.cpp). Inside a loop turn every callback is a
+ * plain call; the post handler runs one callback scope (ticks + microtasks) for the whole turn, so
+ * a turn that dispatched a thousand messages pays for one scope instead of a thousand. Outside a
+ * turn (uSockets timers, closing handles) MakeCallback keeps its per-call scope. */
+thread_local int insideLoopTurn = 0;
+thread_local int calledIntoJSThisTurn = 0;
+
 MaybeLocal<Value> CallJS(Isolate *isolate, Local<Function> f, int argc, Local<Value> *argv) {
     extern int calledIntoJS;
     extern thread_local int insideCorkCallback;
     /* All calls we do into JS are properly corked, except for res.cork, where we increase the counter explicitly */
     insideCorkCallback++;
-    /* Slow path */
-    auto ret = node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(), f, argc, argv, {0, 0});
+    MaybeLocal<Value> ret;
+    if (insideLoopTurn) {
+        calledIntoJSThisTurn = 1;
+        Local<Context> context = isolate->GetCurrentContext();
+        ret = f->Call(context, context->Global(), argc, argv);
+    } else {
+        /* Slow path */
+        ret = node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(), f, argc, argv, {0, 0});
+    }
     insideCorkCallback--;
     return ret;
 }
@@ -70,6 +84,36 @@ Local<v8::ArrayBuffer> ArrayBuffer_NewCopy(Isolate *isolate, void *data, size_t 
 struct PerSocketData {
     UniquePersistent<Object> socketPf;
 };
+
+/* One persistent ArrayBuffer per loop receive buffer (plain, TLS plaintext), created on first use and
+ * detached at environment cleanup. A message that lies inside one of them is handed to JS as a
+ * Uint8Array over it (no backing store, no detach per message); anything else falls back to a fresh
+ * ArrayBuffer that the caller detaches after the callback (fallback is set in that case). */
+thread_local UniquePersistent<ArrayBuffer> recvBufferPf[2];
+
+Local<Value> RecvBufferView(Isolate *isolate, struct us_loop_t *loop, std::string_view message, Local<ArrayBuffer> &fallback) {
+    unsigned int offset;
+    int which = us_loop_recv_buffer_of(loop, message.data(), (unsigned int) message.length(), &offset);
+    if (which < 0) {
+        fallback = ArrayBuffer_New(isolate, (void *) message.data(), message.length());
+        return fallback;
+    }
+    if (recvBufferPf[which].IsEmpty()) {
+        unsigned int length;
+        char *buffer = us_loop_recv_buffer(loop, which, &length);
+        recvBufferPf[which].Reset(isolate, ArrayBuffer_New(isolate, buffer, length));
+    }
+    return Uint8Array::New(Local<ArrayBuffer>::New(isolate, recvBufferPf[which]), offset, message.length());
+}
+
+void DetachRecvBufferViews(Isolate *isolate) {
+    for (int which = 0; which < 2; which++) {
+        if (!recvBufferPf[which].IsEmpty()) {
+            Local<ArrayBuffer>::New(isolate, recvBufferPf[which])->Detach();
+            recvBufferPf[which].Reset();
+        }
+    }
+}
 
 struct PerContextData {
     Isolate *isolate;

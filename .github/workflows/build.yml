@@ -1,7 +1,9 @@
 name: Build
+# Branch variant of the master workflow: builds the branch that was pushed and
+# publishes into binaries-<branch>, leaving master's binaries branch untouched
 on:
   push:
-    branches: [ master ]
+    branches: [ rx-timestamps ]
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -75,8 +77,10 @@ jobs:
           node --version
           npm --version
 
-          git clone --depth 1 --recursive https://github.com/GSKruschewsky/uWebSockets.js.git
+          git clone --depth 1 --recursive --branch "$SOURCE_BRANCH" https://github.com/GSKruschewsky/uWebSockets.js.git
           cd uWebSockets.js
+          SOURCE_COMMIT=$(git rev-parse HEAD)
+          BIN_BRANCH="binaries-${SOURCE_BRANCH}"
 
           make
           ls dist
@@ -85,6 +89,7 @@ jobs:
           npm install ws
           node smoke.js
           node rxtimestamps.js
+          node messageview.js
           cd ..
 
           ls dist
@@ -98,8 +103,9 @@ jobs:
           # other's freshly pushed binaries.
           pushed=""
           for attempt in 1 2 3 4 5; do
-            git fetch origin binaries
-            git checkout -B binaries FETCH_HEAD
+            # The branch's binaries branch, seeded from master's on the first run
+            git fetch origin "$BIN_BRANCH" || git fetch origin binaries
+            git checkout -B "$BIN_BRANCH" FETCH_HEAD
 
             # Remove old binaries for this arch before adding the new ones
             case "$GITHUB_OS" in
@@ -117,12 +123,12 @@ jobs:
             cp dist/*.node .
             cp dist/*.js .
 
-            # Store the source commit from master
-            git rev-parse master > source_commit
+            # Store the source commit that was built
+            echo "$SOURCE_COMMIT" > source_commit
             ls
 
-            # Get index.d.ts from master and write it as a top-level file
-            git show master:docs/index.d.ts > index.d.ts
+            # Get index.d.ts from the built commit and write it as a top-level file
+            git show "$SOURCE_COMMIT":docs/index.d.ts > index.d.ts
 
             # Stage new binaries + index.d.ts + source_commit
             git add uws*.node uws.js index.d.ts source_commit
@@ -131,7 +137,7 @@ jobs:
 
             git commit -m "[GitHub Actions] Updated ${GITHUB_OS} binaries" || true
 
-            if git push "https://GSKruschewsky:${SECRET}@github.com/GSKruschewsky/uWebSockets.js" binaries; then
+            if git push "https://GSKruschewsky:${SECRET}@github.com/GSKruschewsky/uWebSockets.js" "$BIN_BRANCH"; then
               pushed="yes"
               break
             fi
@@ -151,6 +157,7 @@ jobs:
           docker run --rm \
             -e SECRET="$SECRET" \
             -e GITHUB_OS="${{ matrix.os }}" \
+            -e SOURCE_BRANCH="${{ github.ref_name }}" \
             -v "$PWD:/work" \
             -w /work \
             ubuntu:20.04 \

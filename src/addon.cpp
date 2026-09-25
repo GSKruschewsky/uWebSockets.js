@@ -472,6 +472,20 @@ NODE_MODULE_INITIALIZER(Local<Object> exports, Local<Value> module, Local<Contex
     /* Register vanilla V8 addon */
     PerContextData *perContextData = Main(isolate, exports);
 
+    /* One callback scope per loop turn (see CallJS): plain calls between the pre and post handlers,
+     * one stack-allocated node::CallbackScope at the end of a turn that called into JS */
+    uWS::Loop::get()->addPreHandler((void *) &insideLoopTurn, [](uWS::Loop *) {
+        insideLoopTurn = 1;
+    });
+    uWS::Loop::get()->addPostHandler((void *) &insideLoopTurn, [isolate](uWS::Loop *) {
+        insideLoopTurn = 0;
+        if (calledIntoJSThisTurn) {
+            calledIntoJSThisTurn = 0;
+            HandleScope hs(isolate);
+            node::CallbackScope turnScope(isolate, Object::New(isolate), {0, 0});
+        }
+    });
+
     /* We cannot rely on process.exit or process.beforeExit when it comes to WorkerThreads */
     node::AddEnvironmentCleanupHook(isolate, [](void *arg) {
 
@@ -482,6 +496,9 @@ NODE_MODULE_INITIALIZER(Local<Object> exports, Local<Value> module, Local<Contex
         perContextData->sslApps.clear();
         perContextData->cliApps.clear();
         perContextData->cliSSLApps.clear();
+        DetachRecvBufferViews(perContextData->isolate);
+        uWS::Loop::get()->removePreHandler((void *) &insideLoopTurn);
+        uWS::Loop::get()->removePostHandler((void *) &insideLoopTurn);
         /* Freeing the loop here means we give time for our timers to close, etc */
         uWS::Loop::get()->free();
 

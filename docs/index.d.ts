@@ -303,6 +303,13 @@ export interface WebSocketBehavior<UserData> {
      * whole: every message decoded from one read shares it. Compare with uWS.nowNs(). Defaults to false, which
      * leaves the receive path exactly as it is without the option. */
     rxTimestamps?: boolean;
+    /** (Client only) Hand the message handler a Uint8Array view over the loop's receive buffer instead of a fresh
+     * ArrayBuffer per message. Same lifetime rule (valid until the callback returns; the memory is reused by the
+     * next read), no allocation of a backing store and no neutering per message. A message that was reassembled
+     * from several frames or inflated arrives as an ArrayBuffer as before, so the handler must accept both
+     * (Buffer.from(view.buffer, view.byteOffset, view.byteLength) / TextDecoder / DataView over the view's buffer).
+     * Defaults to false. */
+    messageView?: boolean;
     /** (Client only) Optional local address to bind the socket to. */
     localAddress?: RecognizedString;
     /** (Client only) Optional custom headers to add to the WebSocket handshake request. */
@@ -314,8 +321,11 @@ export interface WebSocketBehavior<UserData> {
     /** Handler for new WebSocket connection. WebSocket is valid from open to close, no errors. */
     open?: (ws: WebSocket<UserData>) => void | Promise<void>;
     /** Handler for a WebSocket message. Messages are given as ArrayBuffer no matter if they are binary or not. Given ArrayBuffer is valid during the lifetime of this callback (until first await or return) and will be neutered.
-     * (Client only) With rxTimestamps enabled, rxTimestampNs and rxTimestampFromKernel are passed as well. */
-    message?: (ws: WebSocket<UserData>, message: ArrayBuffer, isBinary: boolean, rxTimestampNs?: bigint, rxTimestampFromKernel?: boolean) => void | Promise<void>;
+     * (Client only) With rxTimestamps enabled, rxTimestampNs and rxTimestampFromKernel are passed as well; with messageView enabled the
+     * message is a Uint8Array view (an ArrayBuffer only for reassembled or inflated messages). Callbacks dispatched from one event-loop
+     * turn share one Node callback scope: process.nextTick callbacks and promise continuations scheduled inside a message handler run
+     * when the turn's dispatch ends (or at the next Node callback of the same turn), not between two messages of the same read. */
+    message?: (ws: WebSocket<UserData>, message: ArrayBuffer | Uint8Array, isBinary: boolean, rxTimestampNs?: bigint, rxTimestampFromKernel?: boolean) => void | Promise<void>;
     /** Handler for a dropped WebSocket message. Messages can be dropped due to specified backpressure settings. Messages are given as ArrayBuffer no matter if they are binary or not. Given ArrayBuffer is valid during the lifetime of this callback (until first await or return) and will be neutered. */
     dropped?: (ws: WebSocket<UserData>, message: ArrayBuffer, isBinary: boolean) => void | Promise<void>;
     /** Handler for when WebSocket backpressure drains. Check ws.getBufferedAmount(). Use this to guide / drive your backpressure throttling. */
