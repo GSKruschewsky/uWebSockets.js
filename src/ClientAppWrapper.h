@@ -355,7 +355,18 @@ void uWS_ClientApp_connect(const FunctionCallbackInfo<Value> &args) {
         return;
     }
 
-    app->connect(std::string(url.getString()));
+    /* Optional second argument: the name sent as the Host header and the TLS SNI, so the
+     * URL may carry an address the caller resolved asynchronously (see ClientApp::connect) */
+    std::string hostname;
+    if (args.Length() > 1 && !args[1]->IsUndefined() && !args[1]->IsNull()) {
+        NativeString hostnameString(isolate, args[1]);
+        if (hostnameString.isInvalid(args)) {
+            return;
+        }
+        hostname = std::string(hostnameString.getString());
+    }
+
+    app->connect(std::string(url.getString()), hostname);
 
     args.GetReturnValue().Set(args.This());
 }
