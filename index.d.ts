@@ -447,7 +447,10 @@ export interface TemplatedClientApp {
     /** Registers a handler to WebSocket client events. */
     ws<UserData>(behavior: WebSocketBehavior<UserData>) : TemplatedClientApp;
     /** Connects to a WebSocket server at url. */
-    connect<UserData>(url: RecognizedString) : TemplatedClientApp;
+    /** Connects to the URL. With 'hostname' given, that name is sent as the Host header and the TLS SNI
+     * instead of the URL's host, so the URL may carry an address the caller resolved asynchronously:
+     * resolution inside connect() (getaddrinfo) blocks the event loop for the resolver's round trip. */
+    connect<UserData>(url: RecognizedString, hostname?: RecognizedString) : TemplatedClientApp;
 }
 
 /** Constructs a non-SSL WS client. A client is your starting point where you attach behavior to WS events.
