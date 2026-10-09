@@ -352,7 +352,10 @@ export interface WebSocketBehavior<UserData> {
     /** (Client only) Handler for a failed connection attempt (refused, unreachable, name resolution failure).
      * Fires instead of open/close when the TCP connection itself could not be established. When this handler
      * is not registered, such failures are reported through rejectedHandshake instead (with empty status).
-     * @param code - Platform errno (e.g. 111 = ECONNREFUSED on Linux), or 0 when the attempt could not be made at all (e.g. DNS failure)
+     * @param code - A positive code is the platform's socket error (os.constants.errno, e.g. 111 = ECONNREFUSED
+     * on Linux). A code at or below uWS.CONNECT_ERROR_RESOLVE_BASE (uWS.isResolveError(code)) is a failed name
+     * lookup carrying the getaddrinfo error: uWS.resolveErrorCode(code) is the absolute EAI_* value. 0 means
+     * the attempt could not be started and no error was left behind.
      */
     connectError?: (code: number) => void | Promise<void>;
 }
@@ -471,6 +474,15 @@ export function us_socket_local_port(socket: us_socket | us_listen_socket) : num
  * client message handler with rxTimestamps enabled, so (nowNs() - rxTimestampNs) is the time spent between the
  * kernel receiving the segment and the handler running. */
 export function nowNs() : bigint;
+
+/** connectError codes at or below this value are failed name lookups; see isResolveError and resolveErrorCode. */
+export var CONNECT_ERROR_RESOLVE_BASE: number;
+
+/** True when a connectError code is a failed name lookup (code <= CONNECT_ERROR_RESOLVE_BASE). */
+export function isResolveError(code: number) : boolean;
+
+/** The getaddrinfo error carried by a name-lookup connectError code: the absolute EAI_* value (e.g. 2 = EAI_NONAME on glibc). */
+export function resolveErrorCode(code: number) : number;
 
 export interface MultipartField {
     data: ArrayBuffer;

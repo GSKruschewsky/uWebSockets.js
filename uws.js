@@ -19,9 +19,15 @@ module.exports = (() => {
 	try {
 		return require('./uws_' + process.platform + '_' + process.arch + '_' + process.versions.modules + '.node');
 	} catch (e) {
-		throw new Error('This version of uWS.js (v1.0.14) supports only Node.js versions 22, 24, 25 and 26 on (glibc) Linux on Tier 1 platforms (https://github.com/nodejs/node/blob/master/BUILDING.md#platform-list).\n\n' + e.toString());
+		throw new Error('This version of uWS.js (v1.0.15) supports only Node.js versions 22, 24, 25 and 26 on (glibc) Linux on Tier 1 platforms (https://github.com/nodejs/node/blob/master/BUILDING.md#platform-list).\n\n' + e.toString());
 	}
 })();
+
+/* A connectError code at or below CONNECT_ERROR_RESOLVE_BASE is a failed name lookup: resolveErrorCode()
+ * returns the getaddrinfo error it carries (the absolute EAI_* value, e.g. 2 = EAI_NONAME on glibc). Any
+ * positive code is the platform's socket error (os.constants.errno), 0 an attempt that could not be started. */
+module.exports.isResolveError = (code) => code <= module.exports.CONNECT_ERROR_RESOLVE_BASE;
+module.exports.resolveErrorCode = (code) => module.exports.CONNECT_ERROR_RESOLVE_BASE - code;
 
 const MAX_U8 = Math.pow(2, 8) - 1;
 const MAX_U16 = Math.pow(2, 16) - 1;
