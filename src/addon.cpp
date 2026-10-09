@@ -432,6 +432,9 @@ PerContextData *Main(Isolate *isolate, Local<Object> exports) {
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "us_socket_local_port", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_us_socket_local_port)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "nowNs", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_nowNs)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
 
+    /* connectError codes at or below this value are failed name lookups (see uWS::CONNECT_ERROR_RESOLVE_BASE) */
+    exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "CONNECT_ERROR_RESOLVE_BASE", NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, uWS::CONNECT_ERROR_RESOLVE_BASE)).ToChecked();
+
     /* Compression enum */
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "DISABLED", NewStringType::kNormal).ToLocalChecked(), Integer::NewFromUnsigned(isolate, uWS::DISABLED)).ToChecked();
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "SHARED_COMPRESSOR", NewStringType::kNormal).ToLocalChecked(), Integer::NewFromUnsigned(isolate, uWS::SHARED_COMPRESSOR)).ToChecked();

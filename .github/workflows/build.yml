@@ -91,6 +91,7 @@ jobs:
           node rxtimestamps.js
           node messageview.js
           node hostname.js
+          node resolve-error.js
           cd ..
 
           ls dist
