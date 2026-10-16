@@ -1,9 +1,10 @@
 name: Build
-# Branch variant of the master workflow: builds the branch that was pushed and
-# publishes into binaries-<branch>, leaving master's binaries branch untouched
+# Builds the branch that was pushed: master publishes into binaries (the branch
+# the release tags point at), any other listed branch into binaries-<branch>,
+# leaving master's binaries untouched
 on:
   push:
-    branches: [ rx-timestamps ]
+    branches: [ master, rx-timestamps ]
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -80,7 +81,7 @@ jobs:
           git clone --depth 1 --recursive --branch "$SOURCE_BRANCH" https://github.com/GSKruschewsky/uWebSockets.js.git
           cd uWebSockets.js
           SOURCE_COMMIT=$(git rev-parse HEAD)
-          BIN_BRANCH="binaries-${SOURCE_BRANCH}"
+          if [ "$SOURCE_BRANCH" = master ]; then BIN_BRANCH=binaries; else BIN_BRANCH="binaries-${SOURCE_BRANCH}"; fi
 
           make
           ls dist
