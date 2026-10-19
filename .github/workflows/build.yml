@@ -93,6 +93,8 @@ jobs:
           node messageview.js
           node hostname.js
           node resolve-error.js
+          node connect-overlap.js
+          node connect-timeout.js
           cd ..
 
           ls dist
