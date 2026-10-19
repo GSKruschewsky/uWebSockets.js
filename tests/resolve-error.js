@@ -6,7 +6,7 @@
 //     uWS.CONNECT_ERROR_RESOLVE_BASE (uWS.isResolveError, uWS.resolveErrorCode = EAI_*);
 //   - a numeric host on a closed port reports the platform errno (ECONNREFUSED);
 //   - a localAddress the host does not own fails synchronously inside uSockets (bind):
-//     the errno (EADDRNOTAVAIL) is carried through instead of 0;
+//     the error uSockets kept for the attempt (EADDRNOTAVAIL) is reported, never 0;
 //   - connect() returns at once in every case and the loop keeps ticking meanwhile.
 const uWS = require('../dist/uws.js');
 const os = require('os');
