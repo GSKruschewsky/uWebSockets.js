@@ -324,7 +324,8 @@ export interface WebSocketBehavior<UserData> {
      */
     upgrade?: (res: HttpResponse, req: HttpRequest, context: us_socket_context_t) => void | Promise<void>;
     /** Handler for new WebSocket connection. WebSocket is valid from open to close, no errors. */
-    open?: (ws: WebSocket<UserData>) => void | Promise<void>;
+    open?: (ws: WebSocket<UserData>, attempt?: number) => void | Promise<void>;
+    /* (Client only) 'attempt' is the number connect() returned for the attempt that opened this socket. */
     /** Handler for a WebSocket message. Messages are given as ArrayBuffer no matter if they are binary or not. Given ArrayBuffer is valid during the lifetime of this callback (until first await or return) and will be neutered.
      * (Client only) With rxTimestamps enabled, rxTimestampNs and rxTimestampFromKernel are passed as well; with messageView enabled the
      * message is a Uint8Array view (an ArrayBuffer only for reassembled or inflated messages). Callbacks dispatched from one event-loop
@@ -352,8 +353,9 @@ export interface WebSocketBehavior<UserData> {
      * @param statusText - HTTP status text (e.g., "Forbidden"), or "" when no HTTP response was parsed
      * @param body - Response body (or raw received bytes) as string
      * @param req - HttpRequest object containing response headers (empty when no HTTP response was parsed)
+     * @param attempt - The number connect() returned for the attempt this rejection belongs to
      */
-    rejectedHandshake?: (status: string, statusText: string, body: string, req: HttpRequest) => void | Promise<void>;
+    rejectedHandshake?: (status: string, statusText: string, body: string, req: HttpRequest, attempt: number) => void | Promise<void>;
     /** (Client only) Handler for a failed connection attempt (refused, unreachable, name resolution failure).
      * Fires instead of open/close when the TCP connection itself could not be established. When this handler
      * is not registered, such failures are reported through rejectedHandshake instead (with empty status).
@@ -362,8 +364,9 @@ export interface WebSocketBehavior<UserData> {
      * uWS.CONNECT_ERROR_RESOLVE_BASE (uWS.isResolveError(code)) is a failed name lookup carrying the getaddrinfo
      * error: uWS.resolveErrorCode(code) is the absolute EAI_* value. 0 means the attempt could not be started
      * and no error was left behind.
+     * @param attempt - The number connect() returned for the attempt this failure belongs to
      */
-    connectError?: (code: number) => void | Promise<void>;
+    connectError?: (code: number, attempt: number) => void | Promise<void>;
 }
 
 /** Options used when constructing an app. Especially for SSLApp.
@@ -461,8 +464,10 @@ export interface TemplatedClientApp {
      * the URL's host in both, so the URL may carry an address the caller resolved itself: "name" gets the
      * URL's non-default port appended in the Host header, "name:port" is sent as given. Throws on a scheme
      * that does not match the app (ws vs wss), an invalid port, or a control character in either argument.
-     * Every attempt ends in exactly one of open, rejectedHandshake or connectError. */
-    connect<UserData>(url: RecognizedString, hostname?: RecognizedString) : TemplatedClientApp;
+     * Returns the attempt number (1, 2, 3 ... per client app). Every attempt ends in exactly one of
+     * open(ws, attempt), rejectedHandshake(..., attempt) or connectError(code, attempt); attempts may overlap
+     * (a re-dial while an earlier one is still pending) and each sends its own Host header, path and SNI. */
+    connect<UserData>(url: RecognizedString, hostname?: RecognizedString) : number;
 }
 
 /** Constructs a non-SSL WS client. A client is your starting point where you attach behavior to WS events.
