@@ -95,6 +95,7 @@ jobs:
           node resolve-error.js
           node connect-overlap.js
           node connect-timeout.js
+          node sni.js
           cd ..
 
           ls dist

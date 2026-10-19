@@ -73,8 +73,8 @@ function runStep (i) {
     open: (ws) => { finish('open'); ws.end(1000); },
     message: () => {},
     close: () => {},
-    rejectedHandshake: (status, statusText, body) => finish('rejectedHandshake', `${status} ${statusText} ${body}`),
-    connectError: (code) => finish('connectError', code),
+    rejectedHandshake: (status, statusText, body, req, attempt) => finish('rejectedHandshake', `${status} ${statusText} ${body}`),
+    connectError: (code, attempt) => { if (attempt !== 1) fail(`${name}: connectError reported attempt ${attempt}, expected 1`); finish('connectError', code); },
   });
   const c0 = process.hrtime.bigint();
   client.connect(st.url);

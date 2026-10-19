@@ -183,8 +183,9 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
 
         Local<Function> openLf = Local<Function>::New(isolate, openPf);
         if (!openLf.IsEmpty() && !openLf->IsUndefined()) {
-            Local<Value> argv[] = {wsObject};
-            CallJS(isolate, openLf, 1, argv);
+            /* open(ws, attempt): the number connect() returned for this socket's attempt */
+            Local<Value> argv[] = {wsObject, Integer::NewFromUnsigned(isolate, ws->getClientAttempt())};
+            CallJS(isolate, openLf, 2, argv);
         }
     };
 
@@ -311,7 +312,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
     }
 
     if (rejectedHandshakePf != Undefined(isolate)) {
-        behavior.rejectedHandshake = [rejectedHandshakePf = std::move(rejectedHandshakePf), perContextData](std::string_view status, std::string_view statusText, std::string_view body, auto *req) {
+        behavior.rejectedHandshake = [rejectedHandshakePf = std::move(rejectedHandshakePf), perContextData](std::string_view status, std::string_view statusText, std::string_view body, auto *req, unsigned int attempt) {
             Isolate *isolate = perContextData->isolate;
             HandleScope hs(isolate);
 
@@ -323,8 +324,8 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
             Local<Object> reqObject = perContextData->reqTemplate[std::is_same<CLIENTAPP, uWS::CliSSLApp>::value].Get(isolate)->Clone();
             setInternalPointer(reqObject, req);//->SetAlignedPointerInInternalField(0, req);
 
-            Local<Value> argv[4] = {statusStr, statusTextStr, bodyStr, reqObject};
-            CallJS(isolate, Local<Function>::New(isolate, rejectedHandshakePf), 4, argv);
+            Local<Value> argv[5] = {statusStr, statusTextStr, bodyStr, reqObject, Integer::NewFromUnsigned(isolate, attempt)};
+            CallJS(isolate, Local<Function>::New(isolate, rejectedHandshakePf), 5, argv);
         
             // Invalidate req object after use
             setInternalPointer(reqObject, nullptr);//->SetAlignedPointerInInternalField(0, nullptr);
@@ -332,11 +333,11 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
     }
 
     if (connectErrorPf != Undefined(isolate)) {
-        behavior.connectError = [connectErrorPf = std::move(connectErrorPf), isolate](int code) {
+        behavior.connectError = [connectErrorPf = std::move(connectErrorPf), isolate](int code, unsigned int attempt) {
             HandleScope hs(isolate);
 
-            Local<Value> argv[1] = {Integer::New(isolate, code)};
-            CallJS(isolate, Local<Function>::New(isolate, connectErrorPf), 1, argv);
+            Local<Value> argv[2] = {Integer::New(isolate, code), Integer::NewFromUnsigned(isolate, attempt)};
+            CallJS(isolate, Local<Function>::New(isolate, connectErrorPf), 2, argv);
         };
     }
 
@@ -374,14 +375,17 @@ void uWS_ClientApp_connect(const FunctionCallbackInfo<Value> &args) {
 
     /* connect() rejects a scheme that does not match the app, an invalid port and control
      * characters in the URL or hostname by throwing; surface that as a JS exception */
+    unsigned int attempt;
     try {
-        app->connect(std::string(url.getString()), hostname);
+        attempt = app->connect(std::string(url.getString()), hostname);
     } catch (const std::exception &e) {
         args.GetReturnValue().Set(isolate->ThrowException(v8::Exception::Error(String::NewFromUtf8(isolate, e.what(), NewStringType::kNormal).ToLocalChecked())));
         return;
     }
 
-    args.GetReturnValue().Set(args.This());
+    /* The attempt number: open(ws, attempt), rejectedHandshake(..., attempt) and
+     * connectError(code, attempt) say which connect() they are about */
+    args.GetReturnValue().Set(Integer::NewFromUnsigned(isolate, attempt));
 }
 
 /* This one modified per-thread static strings temporarily */

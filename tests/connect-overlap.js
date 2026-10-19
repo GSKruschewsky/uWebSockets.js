@@ -4,6 +4,8 @@
 // per app), so both attempts open and the server sees two distinct keys. Before this
 // fix the second connect() re-armed the app-wide flag, the first socket to open sent the
 // handshake and the second never did, idling until the HTTP timeout closed it.
+// connect() returns the attempt number and open(ws, attempt) reports it, so the caller
+// can tell which of its overlapping attempts a socket belongs to.
 const uWS = require('../dist/uws.js');
 
 const port = 9016;
@@ -28,8 +30,9 @@ const server = uWS.App().ws('/*', {
 
 function runClient () {
   let opens = 0, closes = 0;
+  const opened = [];
   const client = uWS.CliApp().ws({
-    open: (ws) => { opens++; ws.end(1000); },
+    open: (ws, attempt) => { opens++; opened.push(attempt); ws.end(1000); },
     message: () => {},
     close: () => {
       closes++;
@@ -37,15 +40,17 @@ function runClient () {
       if (opens !== 2) fail(`expected 2 opens, got ${opens}`);
       if (keys.length !== 2) fail(`server saw ${keys.length} handshakes, expected 2`);
       if (keys.length === 2 && keys[0] === keys[1]) fail('both handshakes carried the same key');
-      console.log(`opens ${opens}, server handshake keys ${JSON.stringify(keys)}`);
+      if (JSON.stringify(opened.sort()) !== JSON.stringify([1, 2])) fail(`open reported attempts ${JSON.stringify(opened)}, expected [1,2]`);
+      console.log(`opens ${opens} (attempts ${JSON.stringify(opened)}), server handshake keys ${JSON.stringify(keys)}`);
       console.log(failed ? 'FAILED' : 'OK');
       process.exit(failed ? 1 : 0);
     },
-    rejectedHandshake: (status, statusText, body) => fail(`handshake rejected: ${status} ${statusText} ${body}`),
-    connectError: (code) => fail(`connect error ${code}`),
+    rejectedHandshake: (status, statusText, body, req, attempt) => fail(`attempt ${attempt} handshake rejected: ${status} ${statusText} ${body}`),
+    connectError: (code, attempt) => fail(`attempt ${attempt} connect error ${code}`),
   });
-  client.connect(`ws://127.0.0.1:${port}/`);
-  client.connect(`ws://127.0.0.1:${port}/`);
+  const a = client.connect(`ws://127.0.0.1:${port}/`);
+  const b = client.connect(`ws://127.0.0.1:${port}/`);
+  if (a !== 1 || b !== 2) fail(`connect() returned ${a} and ${b}, expected 1 and 2`);
 }
 
 setTimeout(() => { fail('timed out (the second attempt never opened)'); process.exit(1); }, 15000);
