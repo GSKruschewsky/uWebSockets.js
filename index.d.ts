@@ -295,6 +295,11 @@ export interface WebSocketBehavior<UserData> {
     skipUTF8Validation?: boolean;
     /** (Client only) Whether or not to only parse the last websocket frame from the TCP packet. Defaults to false. */
     onlyLastPacketFrame?: boolean;
+    /** (Client only) Seconds from connect() until the TCP connection must be established, the name lookup included;
+     * otherwise the attempt fails with connectError(ETIMEDOUT) (rejectedHandshake with an empty status when no
+     * connectError is registered). The handshake response is then covered by the 10-second HTTP idle timeout.
+     * 0 disables it. Granularity 4 seconds. Defaults to 10. */
+    connectTimeout?: number;
     /** (Client only) Kernel receive timestamps (Linux SO_TIMESTAMPING). When true, the message handler is called
      * with two extra arguments: rxTimestampNs (bigint, ns since the Unix epoch, CLOCK_REALTIME) — the time the
      * kernel received the TCP segment that carried the message, taken before any userspace processing — and
@@ -353,9 +358,10 @@ export interface WebSocketBehavior<UserData> {
      * Fires instead of open/close when the TCP connection itself could not be established. When this handler
      * is not registered, such failures are reported through rejectedHandshake instead (with empty status).
      * @param code - A positive code is the platform's socket error (os.constants.errno, e.g. 111 = ECONNREFUSED
-     * on Linux). A code at or below uWS.CONNECT_ERROR_RESOLVE_BASE (uWS.isResolveError(code)) is a failed name
-     * lookup carrying the getaddrinfo error: uWS.resolveErrorCode(code) is the absolute EAI_* value. 0 means
-     * the attempt could not be started and no error was left behind.
+     * on Linux; ETIMEDOUT when connectTimeout elapsed or the kernel gave up). A code at or below
+     * uWS.CONNECT_ERROR_RESOLVE_BASE (uWS.isResolveError(code)) is a failed name lookup carrying the getaddrinfo
+     * error: uWS.resolveErrorCode(code) is the absolute EAI_* value. 0 means the attempt could not be started
+     * and no error was left behind.
      */
     connectError?: (code: number) => void | Promise<void>;
 }
@@ -449,10 +455,13 @@ export function SSLApp(options: AppOptions) : TemplatedApp;
 export interface TemplatedClientApp {
     /** Registers a handler to WebSocket client events. */
     ws<UserData>(behavior: WebSocketBehavior<UserData>) : TemplatedClientApp;
-    /** Connects to a WebSocket server at url. */
-    /** Connects to the URL. With 'hostname' given, that name is sent as the Host header and the TLS SNI
-     * instead of the URL's host, so the URL may carry an address the caller resolved asynchronously:
-     * resolution inside connect() (getaddrinfo) blocks the event loop for the resolver's round trip. */
+    /** Connects to the URL (the host name is resolved on a resolver thread; a numeric host connects at once).
+     * The Host header is the URL's host plus ":port" when the port is not the scheme's default; the TLS SNI
+     * is the bare host, omitted for an address literal. With 'hostname' given, that name takes the place of
+     * the URL's host in both, so the URL may carry an address the caller resolved itself: "name" gets the
+     * URL's non-default port appended in the Host header, "name:port" is sent as given. Throws on a scheme
+     * that does not match the app (ws vs wss), an invalid port, or a control character in either argument.
+     * Every attempt ends in exactly one of open, rejectedHandshake or connectError. */
     connect<UserData>(url: RecognizedString, hostname?: RecognizedString) : TemplatedClientApp;
 }
 
