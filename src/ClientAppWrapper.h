@@ -60,6 +60,12 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
             behavior.maxLifetime = maybeMaxLifetime.ToLocalChecked()->Int32Value(isolate->GetCurrentContext()).ToChecked();
         }
 
+        /* connectTimeout or default (seconds for the lookup + TCP connect; 0 disables) */
+        MaybeLocal<Value> maybeConnectTimeout = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "connectTimeout", NewStringType::kNormal).ToLocalChecked());
+        if (!maybeConnectTimeout.IsEmpty() && !maybeConnectTimeout.ToLocalChecked()->IsUndefined()) {
+            behavior.connectTimeout = maybeConnectTimeout.ToLocalChecked()->Int32Value(isolate->GetCurrentContext()).ToChecked();
+        }
+
         /* Compression or default */
         MaybeLocal<Value> maybeCompression = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "compression", NewStringType::kNormal).ToLocalChecked());
         if (!maybeCompression.IsEmpty() && !maybeCompression.ToLocalChecked()->IsUndefined()) {
@@ -366,7 +372,14 @@ void uWS_ClientApp_connect(const FunctionCallbackInfo<Value> &args) {
         hostname = std::string(hostnameString.getString());
     }
 
-    app->connect(std::string(url.getString()), hostname);
+    /* connect() rejects a scheme that does not match the app, an invalid port and control
+     * characters in the URL or hostname by throwing; surface that as a JS exception */
+    try {
+        app->connect(std::string(url.getString()), hostname);
+    } catch (const std::exception &e) {
+        args.GetReturnValue().Set(isolate->ThrowException(v8::Exception::Error(String::NewFromUtf8(isolate, e.what(), NewStringType::kNormal).ToLocalChecked())));
+        return;
+    }
 
     args.GetReturnValue().Set(args.This());
 }
