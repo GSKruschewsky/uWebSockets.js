@@ -100,8 +100,9 @@ jobs:
 
           ls dist
 
-          git config --global user.email "luhkynaat@gmail.com"
+          git config --global user.email "61966264+GSKruschewsky@users.noreply.github.com"
           git config --global user.name "GSKruschewsky"
+          # The noreply address: GitHub rejects pushes whose commits carry a private email (GH007)
 
           # Publish to the binaries branch. Both matrix jobs push here around the
           # same time, so never force-push: build the commit on the freshly fetched
