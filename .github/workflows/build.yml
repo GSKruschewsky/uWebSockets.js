@@ -35,7 +35,14 @@ jobs:
           # keeps the build off the Ubuntu toolchain PPA on Launchpad, whose outages
           # (503 on the index and on package downloads) killed whole builds.
           gcc --version | head -n1
-          APT="-o Acquire::Retries=5 -o Acquire::http::Timeout=60"
+
+          # Debian 11 is end-of-life: its packages live on archive.debian.org for good,
+          # while deb.debian.org still serves the old index but no longer the security
+          # pool (every download there is a 404). Use the archive, whose Release files
+          # are past their validity date by design.
+          printf 'deb http://archive.debian.org/debian bullseye main\ndeb http://archive.debian.org/debian-security bullseye-security main\n' > /etc/apt/sources.list
+          rm -f /etc/apt/sources.list.d/*.list
+          APT="-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::Check-Valid-Until=false"
           apt-get update $APT
           apt-get install -y $APT wget gnupg ca-certificates curl git make zlib1g-dev binutils
 
