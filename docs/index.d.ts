@@ -295,6 +295,11 @@ export interface WebSocketBehavior<UserData> {
     skipUTF8Validation?: boolean;
     /** (Client only) Whether or not to only parse the last websocket frame from the TCP packet. Defaults to false. */
     onlyLastPacketFrame?: boolean;
+    /** (Client only) Seconds from connect() until the TCP connection must be established, the name lookup included;
+     * otherwise the attempt fails with connectError(ETIMEDOUT) (rejectedHandshake with an empty status when no
+     * connectError is registered). The handshake response is then covered by the 10-second HTTP idle timeout.
+     * 0 disables it. Granularity 4 seconds. Defaults to 10. */
+    connectTimeout?: number;
     /** (Client only) Kernel receive timestamps (Linux SO_TIMESTAMPING). When true, the message handler is called
      * with two extra arguments: rxTimestampNs (bigint, ns since the Unix epoch, CLOCK_REALTIME) — the time the
      * kernel received the TCP segment that carried the message, taken before any userspace processing — and
@@ -303,6 +308,13 @@ export interface WebSocketBehavior<UserData> {
      * whole: every message decoded from one read shares it. Compare with uWS.nowNs(). Defaults to false, which
      * leaves the receive path exactly as it is without the option. */
     rxTimestamps?: boolean;
+    /** (Client only) Hand the message handler a Uint8Array view over the loop's receive buffer instead of a fresh
+     * ArrayBuffer per message. Same lifetime rule (valid until the callback returns; the memory is reused by the
+     * next read), no allocation of a backing store and no neutering per message. A message that was reassembled
+     * from several frames or inflated arrives as an ArrayBuffer as before, so the handler must accept both
+     * (Buffer.from(view.buffer, view.byteOffset, view.byteLength) / TextDecoder / DataView over the view's buffer).
+     * Defaults to false. */
+    messageView?: boolean;
     /** (Client only) Optional local address to bind the socket to. */
     localAddress?: RecognizedString;
     /** (Client only) Optional custom headers to add to the WebSocket handshake request. */
@@ -312,10 +324,14 @@ export interface WebSocketBehavior<UserData> {
      */
     upgrade?: (res: HttpResponse, req: HttpRequest, context: us_socket_context_t) => void | Promise<void>;
     /** Handler for new WebSocket connection. WebSocket is valid from open to close, no errors. */
-    open?: (ws: WebSocket<UserData>) => void | Promise<void>;
+    open?: (ws: WebSocket<UserData>, attempt?: number) => void | Promise<void>;
+    /* (Client only) 'attempt' is the number connect() returned for the attempt that opened this socket. */
     /** Handler for a WebSocket message. Messages are given as ArrayBuffer no matter if they are binary or not. Given ArrayBuffer is valid during the lifetime of this callback (until first await or return) and will be neutered.
-     * (Client only) With rxTimestamps enabled, rxTimestampNs and rxTimestampFromKernel are passed as well. */
-    message?: (ws: WebSocket<UserData>, message: ArrayBuffer, isBinary: boolean, rxTimestampNs?: bigint, rxTimestampFromKernel?: boolean) => void | Promise<void>;
+     * (Client only) With rxTimestamps enabled, rxTimestampNs and rxTimestampFromKernel are passed as well; with messageView enabled the
+     * message is a Uint8Array view (an ArrayBuffer only for reassembled or inflated messages). Callbacks dispatched from one event-loop
+     * turn share one Node callback scope: process.nextTick callbacks and promise continuations scheduled inside a message handler run
+     * when the turn's dispatch ends (or at the next Node callback of the same turn), not between two messages of the same read. */
+    message?: (ws: WebSocket<UserData>, message: ArrayBuffer | Uint8Array, isBinary: boolean, rxTimestampNs?: bigint, rxTimestampFromKernel?: boolean) => void | Promise<void>;
     /** Handler for a dropped WebSocket message. Messages can be dropped due to specified backpressure settings. Messages are given as ArrayBuffer no matter if they are binary or not. Given ArrayBuffer is valid during the lifetime of this callback (until first await or return) and will be neutered. */
     dropped?: (ws: WebSocket<UserData>, message: ArrayBuffer, isBinary: boolean) => void | Promise<void>;
     /** Handler for when WebSocket backpressure drains. Check ws.getBufferedAmount(). Use this to guide / drive your backpressure throttling. */
@@ -337,14 +353,20 @@ export interface WebSocketBehavior<UserData> {
      * @param statusText - HTTP status text (e.g., "Forbidden"), or "" when no HTTP response was parsed
      * @param body - Response body (or raw received bytes) as string
      * @param req - HttpRequest object containing response headers (empty when no HTTP response was parsed)
+     * @param attempt - The number connect() returned for the attempt this rejection belongs to
      */
-    rejectedHandshake?: (status: string, statusText: string, body: string, req: HttpRequest) => void | Promise<void>;
+    rejectedHandshake?: (status: string, statusText: string, body: string, req: HttpRequest, attempt: number) => void | Promise<void>;
     /** (Client only) Handler for a failed connection attempt (refused, unreachable, name resolution failure).
      * Fires instead of open/close when the TCP connection itself could not be established. When this handler
      * is not registered, such failures are reported through rejectedHandshake instead (with empty status).
-     * @param code - Platform errno (e.g. 111 = ECONNREFUSED on Linux), or 0 when the attempt could not be made at all (e.g. DNS failure)
+     * @param code - A positive code is the platform's socket error (os.constants.errno, e.g. 111 = ECONNREFUSED
+     * on Linux; ETIMEDOUT when connectTimeout elapsed or the kernel gave up). A code at or below
+     * uWS.CONNECT_ERROR_RESOLVE_BASE (uWS.isResolveError(code)) is a failed name lookup carrying the getaddrinfo
+     * error: uWS.resolveErrorCode(code) is the absolute EAI_* value. 0 means the attempt could not be started
+     * and no error was left behind.
+     * @param attempt - The number connect() returned for the attempt this failure belongs to
      */
-    connectError?: (code: number) => void | Promise<void>;
+    connectError?: (code: number, attempt: number) => void | Promise<void>;
 }
 
 /** Options used when constructing an app. Especially for SSLApp.
@@ -436,8 +458,16 @@ export function SSLApp(options: AppOptions) : TemplatedApp;
 export interface TemplatedClientApp {
     /** Registers a handler to WebSocket client events. */
     ws<UserData>(behavior: WebSocketBehavior<UserData>) : TemplatedClientApp;
-    /** Connects to a WebSocket server at url. */
-    connect<UserData>(url: RecognizedString) : TemplatedClientApp;
+    /** Connects to the URL (the host name is resolved on a resolver thread; a numeric host connects at once).
+     * The Host header is the URL's host plus ":port" when the port is not the scheme's default; the TLS SNI
+     * is the bare host, omitted for an address literal. With 'hostname' given, that name takes the place of
+     * the URL's host in both, so the URL may carry an address the caller resolved itself: "name" gets the
+     * URL's non-default port appended in the Host header, "name:port" is sent as given. Throws on a scheme
+     * that does not match the app (ws vs wss), an invalid port, or a control character in either argument.
+     * Returns the attempt number (1, 2, 3 ... per client app). Every attempt ends in exactly one of
+     * open(ws, attempt), rejectedHandshake(..., attempt) or connectError(code, attempt); attempts may overlap
+     * (a re-dial while an earlier one is still pending) and each sends its own Host header, path and SNI. */
+    connect<UserData>(url: RecognizedString, hostname?: RecognizedString) : number;
 }
 
 /** Constructs a non-SSL WS client. A client is your starting point where you attach behavior to WS events.
@@ -458,6 +488,15 @@ export function us_socket_local_port(socket: us_socket | us_listen_socket) : num
  * client message handler with rxTimestamps enabled, so (nowNs() - rxTimestampNs) is the time spent between the
  * kernel receiving the segment and the handler running. */
 export function nowNs() : bigint;
+
+/** connectError codes at or below this value are failed name lookups; see isResolveError and resolveErrorCode. */
+export var CONNECT_ERROR_RESOLVE_BASE: number;
+
+/** True when a connectError code is a failed name lookup (code <= CONNECT_ERROR_RESOLVE_BASE). */
+export function isResolveError(code: number) : boolean;
+
+/** The getaddrinfo error carried by a name-lookup connectError code: the absolute EAI_* value (e.g. 2 = EAI_NONAME on glibc). */
+export function resolveErrorCode(code: number) : number;
 
 export interface MultipartField {
     data: ArrayBuffer;

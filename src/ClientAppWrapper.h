@@ -29,6 +29,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
 
     UniquePersistent<Function> openPf;
     UniquePersistent<Function> messagePf;
+    bool messageView = false;
     UniquePersistent<Function> drainPf;
     UniquePersistent<Function> closePf;
     UniquePersistent<Function> droppedPf;
@@ -57,6 +58,12 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
         MaybeLocal<Value> maybeMaxLifetime = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "maxLifetime", NewStringType::kNormal).ToLocalChecked());
         if (!maybeMaxLifetime.IsEmpty() && !maybeMaxLifetime.ToLocalChecked()->IsUndefined()) {
             behavior.maxLifetime = maybeMaxLifetime.ToLocalChecked()->Int32Value(isolate->GetCurrentContext()).ToChecked();
+        }
+
+        /* connectTimeout or default (seconds for the lookup + TCP connect; 0 disables) */
+        MaybeLocal<Value> maybeConnectTimeout = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "connectTimeout", NewStringType::kNormal).ToLocalChecked());
+        if (!maybeConnectTimeout.IsEmpty() && !maybeConnectTimeout.ToLocalChecked()->IsUndefined()) {
+            behavior.connectTimeout = maybeConnectTimeout.ToLocalChecked()->Int32Value(isolate->GetCurrentContext()).ToChecked();
         }
 
         /* Compression or default */
@@ -101,6 +108,14 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
         MaybeLocal<Value> maybeOnlyLastPacketFrame = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "onlyLastPacketFrame", NewStringType::kNormal).ToLocalChecked());
         if (!maybeOnlyLastPacketFrame.IsEmpty() && !maybeOnlyLastPacketFrame.ToLocalChecked()->IsUndefined()) {
             behavior.onlyLastPacketFrame = maybeOnlyLastPacketFrame.ToLocalChecked()->BooleanValue(isolate);
+        }
+
+        /* messageView or default: hand the message handler a Uint8Array over the loop's receive buffer
+         * (valid only during the callback, like the ArrayBuffer it replaces) instead of a fresh, detached-on-return
+         * ArrayBuffer per message; messages reassembled or inflated outside those buffers keep the ArrayBuffer path */
+        MaybeLocal<Value> maybeMessageView = behaviorObject->Get(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "messageView", NewStringType::kNormal).ToLocalChecked());
+        if (!maybeMessageView.IsEmpty() && !maybeMessageView.ToLocalChecked()->IsUndefined()) {
+            messageView = maybeMessageView.ToLocalChecked()->BooleanValue(isolate);
         }
 
         /* rxTimestamps or default */
@@ -168,8 +183,9 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
 
         Local<Function> openLf = Local<Function>::New(isolate, openPf);
         if (!openLf.IsEmpty() && !openLf->IsUndefined()) {
-            Local<Value> argv[] = {wsObject};
-            CallJS(isolate, openLf, 1, argv);
+            /* open(ws, attempt): the number connect() returned for this socket's attempt */
+            Local<Value> argv[] = {wsObject, Integer::NewFromUnsigned(isolate, ws->getClientAttempt())};
+            CallJS(isolate, openLf, 2, argv);
         }
     };
 
@@ -180,17 +196,18 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
              * dispatched, and it reaches JS as two extra arguments - message(ws, message,
              * isBinary, rxTimestampNs, rxTimestampFromKernel) - so nothing has to be polled */
             struct us_loop_t *loop = (struct us_loop_t *) uWS::Loop::get();
-            behavior.message = [messagePf = std::move(messagePf), isolate, loop](auto *ws, std::string_view message, uWS::OpCode opCode) {
+            behavior.message = [messagePf = std::move(messagePf), isolate, loop, messageView](auto *ws, std::string_view message, uWS::OpCode opCode) {
                 HandleScope hs(isolate);
 
-                Local<ArrayBuffer> messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length());
+                Local<ArrayBuffer> messageArrayBuffer;
+                Local<Value> messageValue = messageView ? RecvBufferView(isolate, loop, message, messageArrayBuffer) : (messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length()));
 
                 int fromKernel = 0;
                 unsigned long long rxNs = us_loop_last_rx_timestamp(loop, &fromKernel);
 
                 PerSocketData *perSocketData = (PerSocketData *) ws->getUserData();
                 Local<Value> argv[5] = {Local<Object>::New(isolate, perSocketData->socketPf),
-                                        messageArrayBuffer,
+                                        messageValue,
                                         Boolean::New(isolate, opCode == uWS::OpCode::BINARY),
                                         BigInt::NewFromUnsigned(isolate, rxNs),
                                         Boolean::New(isolate, fromKernel == 1)};
@@ -198,23 +215,25 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
                 CallJS(isolate, Local<Function>::New(isolate, messagePf), 5, argv);
 
                 /* Important: we clear the ArrayBuffer to make sure it is not invalidly used after return */
-                messageArrayBuffer->Detach();
+                if (!messageArrayBuffer.IsEmpty()) messageArrayBuffer->Detach();
             };
         } else {
-            behavior.message = [messagePf = std::move(messagePf), isolate](auto *ws, std::string_view message, uWS::OpCode opCode) {
+            struct us_loop_t *loop = (struct us_loop_t *) uWS::Loop::get();
+            behavior.message = [messagePf = std::move(messagePf), isolate, loop, messageView](auto *ws, std::string_view message, uWS::OpCode opCode) {
                 HandleScope hs(isolate);
 
-                Local<ArrayBuffer> messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length());
+                Local<ArrayBuffer> messageArrayBuffer;
+                Local<Value> messageValue = messageView ? RecvBufferView(isolate, loop, message, messageArrayBuffer) : (messageArrayBuffer = ArrayBuffer_New(isolate, (void *) message.data(), message.length()));
 
                 PerSocketData *perSocketData = (PerSocketData *) ws->getUserData();
                 Local<Value> argv[3] = {Local<Object>::New(isolate, perSocketData->socketPf),
-                                        messageArrayBuffer,
+                                        messageValue,
                                         Boolean::New(isolate, opCode == uWS::OpCode::BINARY)};
 
                 CallJS(isolate, Local<Function>::New(isolate, messagePf), 3, argv);
 
                 /* Important: we clear the ArrayBuffer to make sure it is not invalidly used after return */
-                messageArrayBuffer->Detach();
+                if (!messageArrayBuffer.IsEmpty()) messageArrayBuffer->Detach();
             };
         }
     }
@@ -293,7 +312,7 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
     }
 
     if (rejectedHandshakePf != Undefined(isolate)) {
-        behavior.rejectedHandshake = [rejectedHandshakePf = std::move(rejectedHandshakePf), perContextData](std::string_view status, std::string_view statusText, std::string_view body, auto *req) {
+        behavior.rejectedHandshake = [rejectedHandshakePf = std::move(rejectedHandshakePf), perContextData](std::string_view status, std::string_view statusText, std::string_view body, auto *req, unsigned int attempt) {
             Isolate *isolate = perContextData->isolate;
             HandleScope hs(isolate);
 
@@ -305,8 +324,8 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
             Local<Object> reqObject = perContextData->reqTemplate[std::is_same<CLIENTAPP, uWS::CliSSLApp>::value].Get(isolate)->Clone();
             setInternalPointer(reqObject, req);//->SetAlignedPointerInInternalField(0, req);
 
-            Local<Value> argv[4] = {statusStr, statusTextStr, bodyStr, reqObject};
-            CallJS(isolate, Local<Function>::New(isolate, rejectedHandshakePf), 4, argv);
+            Local<Value> argv[5] = {statusStr, statusTextStr, bodyStr, reqObject, Integer::NewFromUnsigned(isolate, attempt)};
+            CallJS(isolate, Local<Function>::New(isolate, rejectedHandshakePf), 5, argv);
         
             // Invalidate req object after use
             setInternalPointer(reqObject, nullptr);//->SetAlignedPointerInInternalField(0, nullptr);
@@ -314,11 +333,11 @@ void uWS_ClientApp_ws(const FunctionCallbackInfo<Value> &args) {
     }
 
     if (connectErrorPf != Undefined(isolate)) {
-        behavior.connectError = [connectErrorPf = std::move(connectErrorPf), isolate](int code) {
+        behavior.connectError = [connectErrorPf = std::move(connectErrorPf), isolate](int code, unsigned int attempt) {
             HandleScope hs(isolate);
 
-            Local<Value> argv[1] = {Integer::New(isolate, code)};
-            CallJS(isolate, Local<Function>::New(isolate, connectErrorPf), 1, argv);
+            Local<Value> argv[2] = {Integer::New(isolate, code), Integer::NewFromUnsigned(isolate, attempt)};
+            CallJS(isolate, Local<Function>::New(isolate, connectErrorPf), 2, argv);
         };
     }
 
@@ -343,9 +362,30 @@ void uWS_ClientApp_connect(const FunctionCallbackInfo<Value> &args) {
         return;
     }
 
-    app->connect(std::string(url.getString()));
+    /* Optional second argument: the name sent as the Host header and the TLS SNI, so the
+     * URL may carry an address the caller resolved asynchronously (see ClientApp::connect) */
+    std::string hostname;
+    if (args.Length() > 1 && !args[1]->IsUndefined() && !args[1]->IsNull()) {
+        NativeString hostnameString(isolate, args[1]);
+        if (hostnameString.isInvalid(args)) {
+            return;
+        }
+        hostname = std::string(hostnameString.getString());
+    }
 
-    args.GetReturnValue().Set(args.This());
+    /* connect() rejects a scheme that does not match the app, an invalid port and control
+     * characters in the URL or hostname by throwing; surface that as a JS exception */
+    unsigned int attempt;
+    try {
+        attempt = app->connect(std::string(url.getString()), hostname);
+    } catch (const std::exception &e) {
+        args.GetReturnValue().Set(isolate->ThrowException(v8::Exception::Error(String::NewFromUtf8(isolate, e.what(), NewStringType::kNormal).ToLocalChecked())));
+        return;
+    }
+
+    /* The attempt number: open(ws, attempt), rejectedHandshake(..., attempt) and
+     * connectError(code, attempt) say which connect() they are about */
+    args.GetReturnValue().Set(Integer::NewFromUnsigned(isolate, attempt));
 }
 
 /* This one modified per-thread static strings temporarily */

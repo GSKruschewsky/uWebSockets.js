@@ -1,7 +1,10 @@
 name: Build
+# Builds the branch that was pushed: master publishes into binaries (the branch
+# the release tags point at), any other listed branch into binaries-<branch>,
+# leaving master's binaries untouched
 on:
   push:
-    branches: [ master ]
+    branches: [ master, rx-timestamps ]
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -75,8 +78,10 @@ jobs:
           node --version
           npm --version
 
-          git clone --depth 1 --recursive https://github.com/GSKruschewsky/uWebSockets.js.git
+          git clone --depth 1 --recursive --branch "$SOURCE_BRANCH" https://github.com/GSKruschewsky/uWebSockets.js.git
           cd uWebSockets.js
+          SOURCE_COMMIT=$(git rev-parse HEAD)
+          if [ "$SOURCE_BRANCH" = master ]; then BIN_BRANCH=binaries; else BIN_BRANCH="binaries-${SOURCE_BRANCH}"; fi
 
           make
           ls dist
@@ -85,12 +90,19 @@ jobs:
           npm install ws
           node smoke.js
           node rxtimestamps.js
+          node messageview.js
+          node hostname.js
+          node resolve-error.js
+          node connect-overlap.js
+          node connect-timeout.js
+          node sni.js
           cd ..
 
           ls dist
 
-          git config --global user.email "luhkynaat@gmail.com"
+          git config --global user.email "61966264+GSKruschewsky@users.noreply.github.com"
           git config --global user.name "GSKruschewsky"
+          # The noreply address: GitHub rejects pushes whose commits carry a private email (GH007)
 
           # Publish to the binaries branch. Both matrix jobs push here around the
           # same time, so never force-push: build the commit on the freshly fetched
@@ -98,8 +110,9 @@ jobs:
           # other's freshly pushed binaries.
           pushed=""
           for attempt in 1 2 3 4 5; do
-            git fetch origin binaries
-            git checkout -B binaries FETCH_HEAD
+            # The branch's binaries branch, seeded from master's on the first run
+            git fetch origin "$BIN_BRANCH" || git fetch origin binaries
+            git checkout -B "$BIN_BRANCH" FETCH_HEAD
 
             # Remove old binaries for this arch before adding the new ones
             case "$GITHUB_OS" in
@@ -117,12 +130,12 @@ jobs:
             cp dist/*.node .
             cp dist/*.js .
 
-            # Store the source commit from master
-            git rev-parse master > source_commit
+            # Store the source commit that was built
+            echo "$SOURCE_COMMIT" > source_commit
             ls
 
-            # Get index.d.ts from master and write it as a top-level file
-            git show master:docs/index.d.ts > index.d.ts
+            # Get index.d.ts from the built commit and write it as a top-level file
+            git show "$SOURCE_COMMIT":docs/index.d.ts > index.d.ts
 
             # Stage new binaries + index.d.ts + source_commit
             git add uws*.node uws.js index.d.ts source_commit
@@ -131,7 +144,7 @@ jobs:
 
             git commit -m "[GitHub Actions] Updated ${GITHUB_OS} binaries" || true
 
-            if git push "https://GSKruschewsky:${SECRET}@github.com/GSKruschewsky/uWebSockets.js" binaries; then
+            if git push "https://GSKruschewsky:${SECRET}@github.com/GSKruschewsky/uWebSockets.js" "$BIN_BRANCH"; then
               pushed="yes"
               break
             fi
@@ -151,6 +164,7 @@ jobs:
           docker run --rm \
             -e SECRET="$SECRET" \
             -e GITHUB_OS="${{ matrix.os }}" \
+            -e SOURCE_BRANCH="${{ github.ref_name }}" \
             -v "$PWD:/work" \
             -w /work \
             ubuntu:20.04 \

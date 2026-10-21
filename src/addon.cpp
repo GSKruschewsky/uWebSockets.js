@@ -432,6 +432,9 @@ PerContextData *Main(Isolate *isolate, Local<Object> exports) {
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "us_socket_local_port", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_us_socket_local_port)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "nowNs", NewStringType::kNormal).ToLocalChecked(), FunctionTemplate::New(isolate, uWS_nowNs)->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()).ToChecked();
 
+    /* connectError codes at or below this value are failed name lookups (see uWS::CONNECT_ERROR_RESOLVE_BASE) */
+    exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "CONNECT_ERROR_RESOLVE_BASE", NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, uWS::CONNECT_ERROR_RESOLVE_BASE)).ToChecked();
+
     /* Compression enum */
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "DISABLED", NewStringType::kNormal).ToLocalChecked(), Integer::NewFromUnsigned(isolate, uWS::DISABLED)).ToChecked();
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "SHARED_COMPRESSOR", NewStringType::kNormal).ToLocalChecked(), Integer::NewFromUnsigned(isolate, uWS::SHARED_COMPRESSOR)).ToChecked();
@@ -472,6 +475,20 @@ NODE_MODULE_INITIALIZER(Local<Object> exports, Local<Value> module, Local<Contex
     /* Register vanilla V8 addon */
     PerContextData *perContextData = Main(isolate, exports);
 
+    /* One callback scope per loop turn (see CallJS): plain calls between the pre and post handlers,
+     * one stack-allocated node::CallbackScope at the end of a turn that called into JS */
+    uWS::Loop::get()->addPreHandler((void *) &insideLoopTurn, [](uWS::Loop *) {
+        insideLoopTurn = 1;
+    });
+    uWS::Loop::get()->addPostHandler((void *) &insideLoopTurn, [isolate](uWS::Loop *) {
+        insideLoopTurn = 0;
+        if (calledIntoJSThisTurn) {
+            calledIntoJSThisTurn = 0;
+            HandleScope hs(isolate);
+            node::CallbackScope turnScope(isolate, Object::New(isolate), {0, 0});
+        }
+    });
+
     /* We cannot rely on process.exit or process.beforeExit when it comes to WorkerThreads */
     node::AddEnvironmentCleanupHook(isolate, [](void *arg) {
 
@@ -482,6 +499,9 @@ NODE_MODULE_INITIALIZER(Local<Object> exports, Local<Value> module, Local<Contex
         perContextData->sslApps.clear();
         perContextData->cliApps.clear();
         perContextData->cliSSLApps.clear();
+        DetachRecvBufferViews(perContextData->isolate);
+        uWS::Loop::get()->removePreHandler((void *) &insideLoopTurn);
+        uWS::Loop::get()->removePostHandler((void *) &insideLoopTurn);
         /* Freeing the loop here means we give time for our timers to close, etc */
         uWS::Loop::get()->free();
 
