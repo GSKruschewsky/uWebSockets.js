@@ -1,10 +1,12 @@
 name: Build
 # Builds the branch that was pushed: master publishes into binaries (the branch
-# the release tags point at), any other listed branch into binaries-<branch>,
-# leaving master's binaries untouched
+# the release tags point at), rx-timestamps into binaries-rx-timestamps,
+# leaving master's binaries untouched. A push to a ci/** branch or a manual run
+# builds and tests only (nothing is published).
 on:
   push:
-    branches: [ master, rx-timestamps ]
+    branches: [ master, rx-timestamps, 'ci/**' ]
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -13,7 +15,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
-      - name: Build in Docker (glibc 2.31)
+      - name: Build in Docker (Debian 11, glibc 2.31)
         env:
           SECRET: ${{ secrets.SECRET }}
         run: |
@@ -26,18 +28,37 @@ jobs:
           uname -m || true
           ldd --version | head -n1 || true
 
-          apt-get update
-          apt-get install -y wget gnupg ca-certificates software-properties-common
+          # The image is the official gcc:11.5.0-bullseye: Debian 11 (glibc 2.31, the
+          # oldest glibc the binaries must run on) with GCC 11.5 installed under
+          # /usr/local and the system gcc/g++ diverted to it. Node 24's V8 headers use
+          # C++20 <source_location>, which needs libstdc++ 11: having it in the image
+          # keeps the build off the Ubuntu toolchain PPA on Launchpad, whose outages
+          # (503 on the index and on package downloads) killed whole builds.
+          gcc --version | head -n1
+          APT="-o Acquire::Retries=5 -o Acquire::http::Timeout=60"
+          apt-get update $APT
+          apt-get install -y $APT wget gnupg ca-certificates curl git make zlib1g-dev binutils
 
-          # LLVM repo for clang-18 on Ubuntu 20.04 (focal)
-          echo "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-18 main" > /etc/apt/sources.list.d/llvm.list
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-          apt-get update
-          
-          # Toolchain + Node for smoke test
-          apt-get install -y git build-essential make curl clang-18 lld-18 llvm-18-dev libclang-18-dev zlib1g-dev
+          # LLVM repo for clang-18 on Debian 11 (bullseye); key as a plain file, no apt-key
+          wget -qO /etc/apt/trusted.gpg.d/apt.llvm.org.asc https://apt.llvm.org/llvm-snapshot.gpg.key
+          echo "deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-18 main" > /etc/apt/sources.list.d/llvm.list
+          apt-get update $APT
+          apt-get install -y $APT clang-18 lld-18 llvm-18-dev libclang-18-dev
 
-          # BoringSSL needs CMake >= 3.22; focal's apt only has 3.16. Install from
+          # The apt clang would pick Debian's GCC 10 under /usr/lib/gcc (pulled in as a
+          # dependency); point it at the image's GCC 11 instead, so its libstdc++ 11
+          # headers and static libstdc++ are the ones compiled and linked. build.c
+          # calls clang-18/clang++-18 by name: these wrappers on PATH add the flag.
+          GCC_INSTALL_DIR="$(dirname "$(gcc -print-libgcc-file-name)")"
+          for t in clang-18 clang++-18; do
+            printf '#!/bin/sh\nexec /usr/bin/%s --gcc-install-dir=%s "$@"\n' "$t" "$GCC_INSTALL_DIR" > /usr/local/bin/$t
+            chmod +x /usr/local/bin/$t
+          done
+          clang++-18 -v 2>&1 | grep -i "gcc installation"
+          printf '#include <source_location>\nint main() { return std::source_location::current().line() > 0 ? 0 : 1; }\n' > /tmp/sl.cpp
+          clang++-18 -std=c++20 -static-libstdc++ /tmp/sl.cpp -o /tmp/sl && /tmp/sl && echo "libstdc++ 11 headers and static library in use"
+
+          # BoringSSL needs CMake >= 3.22; bullseye's apt only has 3.18. Install from
           # the official Kitware tarball (multi-arch, runs on old glibc)
           CMAKE_V=3.29.6
           case "$(uname -m)" in
@@ -47,25 +68,11 @@ jobs:
           curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_V}/cmake-${CMAKE_V}-linux-${CMAKE_ARCH}.tar.gz" | tar xz -C /usr/local --strip-components=1
           cmake --version
 
-          # Newer GCC (GCC 11) for C++20 <source_location>.
-          # add-apt-repository resolves the PPA signing key over HKP against
-          # keyserver.ubuntu.com, which times out regularly and has killed whole
-          # builds. Configure the PPA by hand instead: repo line plus the signing
-          # key fetched over plain HTTPS from the Launchpad API.
-          echo "deb https://ppa.launchpadcontent.net/ubuntu-toolchain-r/test/ubuntu focal main" > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list
-          curl -fsSL "https://api.launchpad.net/devel/~ubuntu-toolchain-r/+archive/ubuntu/test?ws.op=getSigningKeyData" \
-            | python3 -c 'import sys, json; sys.stdout.write(json.load(sys.stdin))' \
-            > /etc/apt/trusted.gpg.d/ubuntu-toolchain-r-test.asc
-          apt-get update
-          apt-get install -y gcc-11 g++-11
-          
-          # Set globally so all nested build systems use the right compiler
-          export CC=gcc-11
-          export CXX=g++-11
-          
-          # Verify
-          $CC --version
-          $CXX --version
+          # The nested cmake builds (BoringSSL, lsquic) use the image's GCC 11
+          export CC=gcc
+          export CXX=g++
+          $CC --version | head -n1
+          $CXX --version | head -n1
 
           # Install Node.js 24 LTS from the official tarball (multi-arch, works on
           # arm64 + amd64, includes npm, no third-party apt repo to go stale)
@@ -99,6 +106,15 @@ jobs:
           cd ..
 
           ls dist
+          # Every binary must keep running on glibc 2.31 hosts
+          for f in dist/*.node; do
+            echo "$f needs up to $(objdump -T "$f" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -n1)"
+          done
+
+          if [ "$PUBLISH" != yes ]; then
+            echo "Build and tests passed; not publishing (branch $SOURCE_BRANCH, event $EVENT_NAME)"
+            exit 0
+          fi
 
           git config --global user.email "61966264+GSKruschewsky@users.noreply.github.com"
           git config --global user.name "GSKruschewsky"
@@ -160,12 +176,17 @@ jobs:
 
           chmod +x docker_build.sh
 
-          # 2) Run that script inside ubuntu:20.04
+          # 2) Run that script inside the gcc:11.5.0-bullseye image (glibc 2.31).
+          # Only a push to master or rx-timestamps publishes binaries.
+          PUBLISH=no
+          if [ "${{ github.event_name }}" = push ] && { [ "${{ github.ref_name }}" = master ] || [ "${{ github.ref_name }}" = rx-timestamps ]; }; then PUBLISH=yes; fi
           docker run --rm \
             -e SECRET="$SECRET" \
             -e GITHUB_OS="${{ matrix.os }}" \
             -e SOURCE_BRANCH="${{ github.ref_name }}" \
+            -e EVENT_NAME="${{ github.event_name }}" \
+            -e PUBLISH="$PUBLISH" \
             -v "$PWD:/work" \
             -w /work \
-            ubuntu:20.04 \
+            gcc:11.5.0-bullseye \
             /work/docker_build.sh
